@@ -40,6 +40,26 @@ st.markdown("""
         border-bottom: 3px solid var(--rx-orange) !important;
     }
 
+    /* ── Hide toolbar items: Star, Edit, GitHub (keep Share + 3-dots) ── */
+    [data-testid="stActionButton"],
+    [data-testid="stToolbarActionButton"][aria-label="Edit source"],
+    header a[href*="github"],
+    [data-testid="stAppDeployButton"],
+    [data-testid="stSourceButton"] {
+        display: none !important;
+    }
+    /* Fallback: hide star/edit/github by common Streamlit toolbar structure */
+    header button[title="Favorite"],
+    header button[title="Star"],
+    header button[title="Edit"],
+    header button[title="Edit source"],
+    header button[title="Fork this app"],
+    header a[title*="GitHub"],
+    header a[title*="github"],
+    header a[title="View app source"] {
+        display: none !important;
+    }
+
     /* ── Primary buttons ── */
     button[kind="primary"],
     .stDownloadButton > button[kind="primary"] {
