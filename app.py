@@ -197,8 +197,15 @@ st.markdown(f"""
 
 
 # ──────────────────────────────────────────────
-# Sidebar — Documentation Viewer
+# Sidebar — Logo + Documentation Button
 # ──────────────────────────────────────────────
+
+# Load documentation PDF as base64
+DOC_B64 = ""
+doc_pdf_path = Path(__file__).parent / "DOCUMENTATION.pdf"
+if doc_pdf_path.exists():
+    DOC_B64 = base64.b64encode(doc_pdf_path.read_bytes()).decode()
+
 with st.sidebar:
     # Sidebar logo
     if LOGO_B64:
@@ -209,26 +216,24 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
-    st.markdown("### View Documentation")
-    st.caption("Reference guide for input files, column mappings, and processing logic.")
     st.markdown("---")
 
-    doc_path = Path(__file__).parent / "DOCUMENTATION.md"
-    if doc_path.exists():
-        doc_content = doc_path.read_text(encoding="utf-8")
-        parts = doc_content.split("\n## ")
-        title_block = parts[0]
-        st.markdown(title_block, unsafe_allow_html=True)
-
-        for part in parts[1:]:
-            lines = part.strip().split("\n", 1)
-            heading = lines[0].strip().lstrip("#").strip()
-            body = lines[1].strip() if len(lines) > 1 else ""
-            with st.expander(heading, expanded=False):
-                st.markdown(f"## {heading}\n\n{body}", unsafe_allow_html=True)
+    # Documentation button — opens PDF in new tab
+    if DOC_B64:
+        st.markdown(
+            f'<a href="data:application/pdf;base64,{DOC_B64}" '
+            f'target="_blank" style="'
+            f"display:block;text-align:center;padding:0.7rem 1rem;"
+            f"background-color:#F47920;color:white !important;border-radius:8px;"
+            f"font-weight:600;font-size:0.95rem;text-decoration:none;"
+            f"letter-spacing:0.3px;"
+            f'">📄 View Documentation</a>',
+            unsafe_allow_html=True,
+        )
+        st.caption("Opens the full reference guide as a PDF in a new tab.")
     else:
         st.warning(
-            "Documentation file not found. Ensure `DOCUMENTATION.md` is placed "
+            "Documentation PDF not found. Ensure `DOCUMENTATION.pdf` is placed "
             "alongside `app.py` in the repository root."
         )
 
