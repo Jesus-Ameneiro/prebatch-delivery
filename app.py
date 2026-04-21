@@ -207,38 +207,77 @@ if doc_pdf_path.exists():
     DOC_B64 = base64.b64encode(doc_pdf_path.read_bytes()).decode()
 
 with st.sidebar:
-    # Sidebar logo
+    # Sidebar logo — centered with padding
     if LOGO_B64:
         st.markdown(
-            f'<div style="text-align:center;padding:0.5rem 0 0.8rem 0;">'
-            f'<img src="data:image/png;base64,{LOGO_B64}" style="height:40px;width:auto;">'
+            f'<div style="text-align:center;padding:1.2rem 0 0.6rem 0;">'
+            f'<img src="data:image/png;base64,{LOGO_B64}" style="height:36px;width:auto;">'
             f'</div>',
             unsafe_allow_html=True,
         )
 
-    st.markdown("---")
+    st.markdown(
+        '<hr style="margin:0.4rem 0 1.2rem 0;border:none;border-top:1px solid #3A3A3A;">',
+        unsafe_allow_html=True,
+    )
 
     # Documentation button — opens PDF in new tab
     if DOC_B64:
         st.markdown(
-            f'<a href="data:application/pdf;base64,{DOC_B64}" '
-            f'target="_blank" style="'
-            f"display:block;text-align:center;padding:0.7rem 1rem;"
-            f"background-color:#F47920;color:white !important;border-radius:8px;"
-            f"font-weight:600;font-size:0.95rem;text-decoration:none;"
-            f"letter-spacing:0.3px;"
-            f'">📄 View Documentation</a>',
+            f"""
+            <a href="data:application/pdf;base64,{DOC_B64}"
+               target="_blank"
+               rel="noopener noreferrer"
+               style="
+                   display: flex;
+                   align-items: center;
+                   justify-content: center;
+                   gap: 0.5rem;
+                   padding: 0.65rem 1.2rem;
+                   background-color: #F47920;
+                   color: #FFFFFF !important;
+                   border-radius: 6px;
+                   font-family: 'Source Sans Pro', sans-serif;
+                   font-weight: 600;
+                   font-size: 0.88rem;
+                   text-decoration: none;
+                   letter-spacing: 0.3px;
+                   transition: background-color 0.2s;
+                   margin: 0 0 0.4rem 0;
+               ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                     stroke-linejoin="round" style="flex-shrink:0;">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                View Documentation
+            </a>
+            """,
             unsafe_allow_html=True,
         )
-        st.caption("Opens the full reference guide as a PDF in a new tab.")
+        st.markdown(
+            '<p style="text-align:center;font-size:0.72rem;color:#808080 !important;'
+            'margin:0;padding:0;">Opens reference guide (PDF) in a new tab</p>',
+            unsafe_allow_html=True,
+        )
     else:
         st.warning(
-            "Documentation PDF not found. Ensure `DOCUMENTATION.pdf` is placed "
-            "alongside `app.py` in the repository root."
+            "DOCUMENTATION.pdf not found. Place it alongside app.py in the repo root."
         )
 
-    st.markdown("---")
-    st.caption("Prebatch Generator v1.0  ·  April 2026")
+    st.markdown(
+        '<hr style="margin:1.2rem 0 0.8rem 0;border:none;border-top:1px solid #3A3A3A;">',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p style="text-align:center;font-size:0.72rem;color:#666 !important;margin:0;">'
+        'Prebatch Generator v1.0 &middot; April 2026</p>',
+        unsafe_allow_html=True,
+    )
 
 
 # ──────────────────────────────────────────────
