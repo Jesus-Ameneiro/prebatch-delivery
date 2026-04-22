@@ -155,6 +155,29 @@ st.markdown("""
         color: var(--rx-black) !important;
     }
 
+    /* ── Sidebar doc button ── */
+    section[data-testid="stSidebar"] .rx-doc-btn {
+        display: block !important;
+        text-align: center !important;
+        padding: 0.5rem 1rem !important;
+        background-color: #F47920 !important;
+        border: 2px solid #F47920 !important;
+        border-radius: 6px !important;
+        text-decoration: none !important;
+        margin: 0 !important;
+    }
+    section[data-testid="stSidebar"] .rx-doc-btn:hover {
+        background-color: #D4611A !important;
+        border-color: #D4611A !important;
+    }
+    section[data-testid="stSidebar"] .rx-doc-btn .rx-doc-btn-text {
+        color: #FFFFFF !important;
+        font-family: 'Source Sans Pro', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 0.82rem !important;
+        letter-spacing: 0.3px !important;
+    }
+
     /* ── Footer ── */
     .rx-footer {
         margin-top: 3rem;
@@ -223,45 +246,16 @@ with st.sidebar:
 
     # Documentation button — opens PDF in new tab
     if DOC_B64:
+        pdf_data_uri = f"data:application/pdf;base64,{DOC_B64}"
         st.markdown(
-            f"""
-            <a href="data:application/pdf;base64,{DOC_B64}"
-               target="_blank"
-               rel="noopener noreferrer"
-               style="
-                   display: flex;
-                   align-items: center;
-                   justify-content: center;
-                   gap: 0.5rem;
-                   padding: 0.65rem 1.2rem;
-                   background-color: #F47920;
-                   color: #FFFFFF !important;
-                   border-radius: 6px;
-                   font-family: 'Source Sans Pro', sans-serif;
-                   font-weight: 600;
-                   font-size: 0.88rem;
-                   text-decoration: none;
-                   letter-spacing: 0.3px;
-                   transition: background-color 0.2s;
-                   margin: 0 0 0.4rem 0;
-               ">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                     stroke-linejoin="round" style="flex-shrink:0;">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                    <line x1="16" y1="13" x2="8" y2="13"/>
-                    <line x1="16" y1="17" x2="8" y2="17"/>
-                    <polyline points="10 9 9 9 8 9"/>
-                </svg>
-                View Documentation
-            </a>
-            """,
+            '<p style="color:#B0B0B0 !important;font-size:0.82rem;margin:0 0 0.5rem 0;'
+            'font-weight:600;letter-spacing:0.2px;">See Documentation</p>',
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<p style="text-align:center;font-size:0.72rem;color:#808080 !important;'
-            'margin:0;padding:0;">Opens reference guide (PDF) in a new tab</p>',
+            f'<a href="{pdf_data_uri}" target="_blank" rel="noopener noreferrer"'
+            f' class="rx-doc-btn">'
+            f'<span class="rx-doc-btn-text">Open Reference Guide</span></a>',
             unsafe_allow_html=True,
         )
     else:
