@@ -309,9 +309,9 @@ with col2:
 
 with col3:
     pc_file = st.file_uploader(
-        "Pull Conflict Check File",
+        "Conflict Check File",
         type=["csv", "xlsx", "xls"],
-        help="Investigation data: machine overviews, notes, company info, addresses, and time spans.",
+        help="Investigation data: machine overviews, notes, entity details, machine counts, and case attribution.",
     )
 
 
@@ -365,10 +365,10 @@ def get_latest_updated(pl_lookup, case_ids):
     return latest
 
 
-def combine_machine_overviews(pc_lookup, case_ids):
+def combine_machine_overviews(cc_lookup, case_ids):
     overviews = []
     for cid in case_ids:
-        row = pc_lookup.get(cid)
+        row = cc_lookup.get(cid)
         if row is not None:
             mo = safe_get(row, "Machine Overview")
             if mo:
@@ -386,10 +386,10 @@ def combine_machine_overviews(pc_lookup, case_ids):
     return ", ".join(unique)
 
 
-def combine_investigation_notes(pc_lookup, case_ids):
+def combine_investigation_notes(cc_lookup, case_ids):
     notes = []
     for cid in case_ids:
-        row = pc_lookup.get(cid)
+        row = cc_lookup.get(cid)
         if row is not None:
             note = safe_get(row, "Investigation Notes")
             if note:
@@ -430,12 +430,23 @@ CS_COLUMNS = [
 # Core Processing
 # ──────────────────────────────────────────────
 
-def process_data(qs_df, pl_df, pc_df, region_code):
+def process_data(qs_df, pl_df, cc_df, region_code):
+    """Merge three source files into the Prebatch output format.
+
+    Data-source mapping (updated for Conflict Check structure):
+        Conflict Check →  Machine Overview, Investigation Notes, Company Name,
+                           Pleteo Entity Name (→ Entity Name), Cylynt Org Name,
+                           Industry, Address, Countries, Time Span, Is Multi National,
+                           Generic Email Addresses, Actionable Domains, Website
+        QS Delivery    →  Case ID (grouped), Case Tier, Categories, machine counts/IDs,
+                           First/Last Event (aggregated for grouped entities)
+        PL Batch       →  Last Updated At (MCC only)
+    """
     qs_df = clean_df(qs_df)
     pl_df = clean_df(pl_df)
-    pc_df = clean_df(pc_df)
+    cc_df = clean_df(cc_df)
 
-    pc_lookup = build_lookup(pc_df, "Case ID")
+    cc_lookup = build_lookup(cc_df, "Case ID")
     pl_lookup = build_lookup(pl_df, "External Case ID")
 
     output_rows = []
@@ -455,44 +466,54 @@ def process_data(qs_df, pl_df, pc_df, region_code):
         if is_grouped:
             grouped_cases.append(case_id_raw)
 
-        pc_row = None
+        # Find Conflict Check row
+        cc_row = None
         for cid in case_ids:
-            if cid in pc_lookup:
-                pc_row = pc_lookup[cid]
+            if cid in cc_lookup:
+                cc_row = cc_lookup[cid]
                 break
-        if pc_row is None:
+        if cc_row is None:
             unmatched_cases.append(case_id_raw)
-            pc_row = pd.Series(dtype=str)
+            cc_row = pd.Series(dtype=str)
 
+        # Machine Overview & Investigation Notes (combine for grouped)
         if is_grouped:
-            machine_overview = combine_machine_overviews(pc_lookup, case_ids)
-            investigation_notes = combine_investigation_notes(pc_lookup, case_ids)
+            machine_overview = combine_machine_overviews(cc_lookup, case_ids)
+            investigation_notes = combine_investigation_notes(cc_lookup, case_ids)
         else:
-            machine_overview = safe_get(pc_row, "Machine Overview")
-            investigation_notes = safe_get(pc_row, "Investigation Notes")
+            machine_overview = safe_get(cc_row, "Machine Overview")
+            investigation_notes = safe_get(cc_row, "Investigation Notes")
 
-        actionable_domains = safe_get(qs_row, "Actionable Domains")
+        # Actionable Domains — CC primary, QS fallback
+        actionable_domains = safe_get(cc_row, "Actionable Domains")
         if not actionable_domains:
-            actionable_domains = safe_get(pc_row, "Actionable Domains")
+            actionable_domains = safe_get(qs_row, "Actionable Domains")
 
-        website = safe_get(qs_row, "Websites")
+        # Website — CC primary, QS fallback
+        website = safe_get(cc_row, "Website")
         if not website:
-            website = safe_get(pc_row, "Website")
+            website = safe_get(qs_row, "Websites")
 
+        # Entity Name — CC primary, QS Company Name as fallback
+        entity_name = safe_get(cc_row, "Pleteo Entity Name")
+        if not entity_name:
+            entity_name = safe_get(qs_row, "Company Name")
+
+        # ── Build output row ──
         if region_code == "MCC":
             last_updated = get_latest_updated(pl_lookup, case_ids)
             row_data = {
                 "Date Added to This Sheet": "",
-                "Is Multi-National": "",
+                "Is Multi-National": safe_get(cc_row, "Is Multi National"),
                 "Machine Overview": machine_overview,
                 "Investigation Notes": investigation_notes,
                 "Case ID": case_id_raw,
-                "Company Name": safe_get(pc_row, "Company Name"),
-                "Entity Name": safe_get(qs_row, "Company Name"),
-                "Cylynt Organization Name": safe_get(pc_row, "Cylynt Organization Name"),
-                "Industry": safe_get(pc_row, "Industry"),
-                "Address": safe_get(pc_row, "Address"),
-                "Countries": safe_get(pc_row, "Countries"),
+                "Company Name": safe_get(cc_row, "Company Name"),
+                "Entity Name": entity_name,
+                "Cylynt Organization Name": safe_get(cc_row, "Cylynt Organization Name"),
+                "Industry": safe_get(cc_row, "Industry"),
+                "Address": safe_get(cc_row, "Address"),
+                "Countries": safe_get(cc_row, "Countries"),
                 "Estimated Case Value": "",
                 "Case Tier": safe_get(qs_row, "Case Tier"),
                 "Case Category": safe_get(qs_row, "[Cfa]-Category"),
@@ -503,26 +524,26 @@ def process_data(qs_df, pl_df, pc_df, region_code):
                 "Actionable Machine IDs": safe_get(qs_row, "Approved Machines"),
                 "First Event": safe_get(qs_row, "First Event"),
                 "Last Event": safe_get(qs_row, "Last Event"),
-                "Time Span": safe_get(pc_row, "Time Span"),
-                "Generic Email Address": "",
+                "Time Span": safe_get(cc_row, "Time Span"),
+                "Generic Email Address": safe_get(cc_row, "Generic Email Addresses"),
                 "Actionable Domains": actionable_domains,
                 "Website": website,
                 "Last Updated At": last_updated,
                 "NNS License Count": "",
             }
-        else:
+        else:  # CS
             row_data = {
                 "Date Added to This Sheet": "",
-                "Is Multi-National": "",
+                "Is Multi-National": safe_get(cc_row, "Is Multi National"),
                 "Machine Overview": machine_overview,
                 "Investigation Notes": investigation_notes,
                 "Case ID": case_id_raw,
-                "Company Name": safe_get(pc_row, "Company Name"),
-                "Entity Name": safe_get(qs_row, "Company Name"),
-                "Cylynt Organization Name": safe_get(pc_row, "Cylynt Organization Name"),
-                "Industry": safe_get(pc_row, "Industry"),
-                "Addresses": safe_get(pc_row, "Address"),
-                "Country": safe_get(pc_row, "Countries"),
+                "Company Name": safe_get(cc_row, "Company Name"),
+                "Entity Name": entity_name,
+                "Cylynt Organization Name": safe_get(cc_row, "Cylynt Organization Name"),
+                "Industry": safe_get(cc_row, "Industry"),
+                "Addresses": safe_get(cc_row, "Address"),
+                "Country": safe_get(cc_row, "Countries"),
                 "Case Tier": safe_get(qs_row, "Case Tier"),
                 "Case Category": safe_get(qs_row, "[Cfa]-Category"),
                 "Actionable Category": safe_get(qs_row, "[Cfa]-ActionableCategory"),
@@ -532,8 +553,8 @@ def process_data(qs_df, pl_df, pc_df, region_code):
                 "Actionable Machine IDs": safe_get(qs_row, "Approved Machines"),
                 "First Event": safe_get(qs_row, "First Event"),
                 "Last Event": safe_get(qs_row, "Last Event"),
-                "Time Span": safe_get(pc_row, "Time Span"),
-                "Generic Email Address": "",
+                "Time Span": safe_get(cc_row, "Time Span"),
+                "Generic Email Address": safe_get(cc_row, "Generic Email Addresses"),
                 "Actionable Domains": actionable_domains,
                 "Website": website,
             }
@@ -578,9 +599,9 @@ if qs_file and pl_file and pc_file:
             try:
                 qs_df = read_file(qs_file)
                 pl_df = read_file(pl_file)
-                pc_df = read_file(pc_file)
+                cc_df = read_file(pc_file)
                 result_df, unmatched, grouped = process_data(
-                    qs_df, pl_df, pc_df, region_code
+                    qs_df, pl_df, cc_df, region_code
                 )
                 st.session_state.result_df = result_df
                 st.session_state.unmatched = unmatched
@@ -606,7 +627,7 @@ if qs_file and pl_file and pc_file:
             with d1:
                 if unmatched:
                     with st.expander(f"Unmatched Cases ({len(unmatched)})"):
-                        st.write("QS Case IDs with no Pull Conflict match:")
+                        st.write("QS Case IDs with no Conflict Check match:")
                         for c in unmatched:
                             st.code(c)
             with d2:
@@ -636,7 +657,7 @@ else:
     if not pl_file:
         missing.append("PL Batch")
     if not pc_file:
-        missing.append("Pull Conflict Check")
+        missing.append("Conflict Check")
     st.info(f"Upload the remaining file(s) to proceed: **{', '.join(missing)}**")
 
 
