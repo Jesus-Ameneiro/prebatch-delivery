@@ -294,24 +294,27 @@ st.subheader("Upload Source Files")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    qs_file = st.file_uploader(
-        "QS Delivery ID File",
+    qs_files = st.file_uploader(
+        "QS Delivery ID File(s)",
         type=["csv", "xlsx", "xls"],
-        help="Contains grouped Case IDs, entity names, aggregated machine counts, and event dates.",
+        accept_multiple_files=True,
+        help="Contains grouped Case IDs, entity names, aggregated machine counts, and event dates. Multiple files will be concatenated.",
     )
 
 with col2:
-    pl_file = st.file_uploader(
-        "PL Batch File (Pleteo Export)",
+    pl_files = st.file_uploader(
+        "PL Batch File(s) (Pleteo Export)",
         type=["csv", "xlsx", "xls"],
-        help="CRM export providing the 'Updated' timestamp for Last Updated At (MCC).",
+        accept_multiple_files=True,
+        help="CRM export providing the 'Updated' timestamp for Last Updated At (MCC). Multiple files will be concatenated.",
     )
 
 with col3:
-    pc_file = st.file_uploader(
-        "Conflict Check File",
+    pc_files = st.file_uploader(
+        "Conflict Check File(s)",
         type=["csv", "xlsx", "xls"],
-        help="Investigation data: machine overviews, notes, entity details, machine counts, and case attribution.",
+        accept_multiple_files=True,
+        help="Investigation data: machine overviews, notes, entity details, machine counts, and case attribution. Multiple files will be concatenated.",
     )
 
 
@@ -326,6 +329,22 @@ def read_file(uploaded_file):
         return pd.read_csv(uploaded_file, dtype=str, keep_default_na=False)
     else:
         return pd.read_excel(uploaded_file, dtype=str, keep_default_na=False)
+
+
+def read_and_concat(uploaded_files):
+    """Read one or more uploaded files and concatenate them into a single DataFrame.
+
+    Behaves as if the user uploaded a single file containing all rows from every
+    provided file, in upload order. Missing columns across files are filled with
+    empty strings (consistent with the rest of the pipeline's NA handling).
+    """
+    if not uploaded_files:
+        return pd.DataFrame()
+    frames = [read_file(f) for f in uploaded_files]
+    if len(frames) == 1:
+        return frames[0]
+    combined = pd.concat(frames, ignore_index=True, sort=False)
+    return combined
 
 
 def clean_df(df):
@@ -593,13 +612,13 @@ if "result_df" not in st.session_state:
 # ──────────────────────────────────────────────
 st.divider()
 
-if qs_file and pl_file and pc_file:
+if qs_files and pl_files and pc_files:
     if st.button("Generate Prebatch File", type="primary", use_container_width=True):
         with st.spinner("Processing files..."):
             try:
-                qs_df = read_file(qs_file)
-                pl_df = read_file(pl_file)
-                cc_df = read_file(pc_file)
+                qs_df = read_and_concat(qs_files)
+                pl_df = read_and_concat(pl_files)
+                cc_df = read_and_concat(pc_files)
                 result_df, unmatched, grouped = process_data(
                     qs_df, pl_df, cc_df, region_code
                 )
@@ -652,11 +671,11 @@ if qs_file and pl_file and pc_file:
 
 else:
     missing = []
-    if not qs_file:
+    if not qs_files:
         missing.append("QS Delivery ID")
-    if not pl_file:
+    if not pl_files:
         missing.append("PL Batch")
-    if not pc_file:
+    if not pc_files:
         missing.append("Conflict Check")
     st.info(f"Upload the remaining file(s) to proceed: **{', '.join(missing)}**")
 
