@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import base64
 import json
@@ -421,18 +422,45 @@ with st.sidebar:
 
     if DOC_B64:
         st.markdown(
-            '<p style="color:#B0B0B0 !important;font-size:0.82rem;margin:0 0 0.5rem 0;'
+            '<p style="color:#B0B0B0 !important;font-size:0.82rem;margin:0 0 0.4rem 0;'
             'font-weight:600;letter-spacing:0.2px;">See Documentation</p>',
             unsafe_allow_html=True,
         )
-        st.download_button(
-            label="📄 Open Reference Guide",
-            data=base64.b64decode(DOC_B64),
-            file_name="Prebatch_Reference_Guide.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-            key="doc_download_btn",
-        )
+        components.html(f"""
+        <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            button {{
+                width: 100%;
+                background-color: #F47920;
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                padding: 0.55rem 1rem;
+                font-size: 0.82rem;
+                font-weight: 600;
+                font-family: 'Source Sans Pro', sans-serif;
+                cursor: pointer;
+                letter-spacing: 0.3px;
+                transition: background-color 0.2s;
+            }}
+            button:hover {{ background-color: #D4611A; }}
+        </style>
+        <button onclick="openPDF()">📄 Open Reference Guide</button>
+        <script>
+            function openPDF() {{
+                var b64 = "{DOC_B64}";
+                var binary = atob(b64);
+                var len = binary.length;
+                var bytes = new Uint8Array(len);
+                for (var i = 0; i < len; i++) {{
+                    bytes[i] = binary.charCodeAt(i);
+                }}
+                var blob = new Blob([bytes], {{ type: "application/pdf" }});
+                var url = URL.createObjectURL(blob);
+                window.open(url, "_blank");
+            }}
+        </script>
+        """, height=46)
     st.markdown('<hr style="margin:1.2rem 0 0.8rem 0;border:none;border-top:1px solid #3A3A3A;">', unsafe_allow_html=True)
 
     # ── Delivery History (persistent) ──
