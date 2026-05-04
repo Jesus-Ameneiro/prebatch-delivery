@@ -425,10 +425,13 @@ with st.sidebar:
             'font-weight:600;letter-spacing:0.2px;">See Documentation</p>',
             unsafe_allow_html=True,
         )
-        st.markdown(
-            f'<a href="data:application/pdf;base64,{DOC_B64}" target="_blank" rel="noopener noreferrer" class="rx-doc-btn">'
-            f'<span class="rx-doc-btn-text">Open Reference Guide</span></a>',
-            unsafe_allow_html=True,
+        st.download_button(
+            label="📄 Open Reference Guide",
+            data=base64.b64decode(DOC_B64),
+            file_name="Prebatch_Reference_Guide.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            key="doc_download_btn",
         )
     st.markdown('<hr style="margin:1.2rem 0 0.8rem 0;border:none;border-top:1px solid #3A3A3A;">', unsafe_allow_html=True)
 
