@@ -258,6 +258,70 @@ def save_history_to_github(history_dict, sha):
         return False, str(e), sha
 
 
+def diagnose_github() -> list:
+    """
+    Run a sequence of checks against GitHub and return a list of
+    (label, ok: bool, detail: str) tuples.
+    """
+    results = []
+    repo, path, branch = _gh_config()
+    token = st.secrets.get("GITHUB_TOKEN", "")
+
+    # 1 — Token present
+    token_ok = bool(token and len(token) > 10)
+    results.append(("Token configured", token_ok,
+                    f"`ghp_...{token[-4:]}` ({len(token)} chars)" if token_ok
+                    else "GITHUB_TOKEN is empty or missing in Streamlit secrets"))
+
+    # 2 — Repo configured
+    repo_ok = bool(repo and "/" in repo and len(repo.split("/")) == 2)
+    results.append(("Repo format (owner/repo)", repo_ok,
+                    f"`{repo}`" if repo_ok
+                    else f"`{repo}` — must be `owner/repo-name` (e.g. `ruvixx/prebatch-delivery`)"))
+
+    # 3 — Repo accessible via API
+    if repo_ok and token_ok:
+        try:
+            req = urllib.request.Request(
+                f"https://api.github.com/repos/{repo}",
+                headers=_gh_headers()
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                info = json.loads(resp.read().decode())
+            default_branch = info.get("default_branch", "unknown")
+            results.append(("Repo accessible", True,
+                             f"Found `{info.get('full_name')}` · default branch: `{default_branch}`"))
+
+            # 4 — Branch check
+            branch_matches = (branch == default_branch)
+            results.append((f"Branch `{branch}` matches default", branch_matches,
+                             f"GITHUB_BRANCH=`{branch}` vs repo default=`{default_branch}`. "
+                             f"{'OK' if branch_matches else f'Update GITHUB_BRANCH to `{default_branch}` in your secrets.'}"))
+        except urllib.error.HTTPError as e:
+            body = ""
+            try: body = e.read().decode()
+            except Exception: pass
+            if e.code == 401:
+                results.append(("Repo accessible", False,
+                                 "HTTP 401 — Token is invalid or expired. Regenerate it on GitHub."))
+            elif e.code == 404:
+                results.append(("Repo accessible", False,
+                                 f"HTTP 404 — Repo `{repo}` not found. "
+                                 "Check spelling and that the token has access to this repo."))
+            else:
+                results.append(("Repo accessible", False, f"HTTP {e.code} — {body}"))
+        except Exception as e:
+            results.append(("Repo accessible", False, str(e)))
+    else:
+        results.append(("Repo accessible", False, "Skipped — fix token/repo format first"))
+
+    # 5 — History file path
+    results.append(("History file path", True,
+                     f"`{path}` — file will be created at repo root if it doesn't exist yet"))
+
+    return results
+
+
 # ──────────────────────────────────────────────
 # Session State + History Bootstrap
 # ──────────────────────────────────────────────
@@ -321,6 +385,11 @@ if st.session_state.history_load_ok:
     st.success(st.session_state.history_load_msg)
 else:
     st.warning(st.session_state.history_load_msg)
+    with st.expander("🔧 GitHub Connection Diagnostics", expanded=True):
+        _diag = diagnose_github()
+        for label, ok, detail in _diag:
+            icon = "✅" if ok else "❌"
+            st.markdown(f"{icon} **{label}** — {detail}")
 
 
 # ──────────────────────────────────────────────
@@ -1290,6 +1359,19 @@ if st.session_state.result_df is not None:
                 st.error(f"❌ Failed to save to GitHub: {err}")
                 st.info("The batch was added to the in-memory history for this session, "
                         "but could not be persisted. Check your GitHub secrets and retry.")
+                with st.expander("🔧 Run GitHub Diagnostics", expanded=True):
+                    _diag = diagnose_github()
+                    for label, ok, detail in _diag:
+                        icon = "✅" if ok else "❌"
+                        st.markdown(f"{icon} **{label}** — {detail}")
+                    st.markdown("---")
+                    st.markdown(
+                        "**Common fixes:**\n"
+                        "- `GITHUB_REPO` must be `owner/repo-name` exactly as it appears in the URL\n"
+                        "- `GITHUB_BRANCH` must match your repo's default branch (`main` or `master`)\n"
+                        "- `GITHUB_TOKEN` must have the `repo` scope and not be expired\n"
+                        "- Update secrets in **Streamlit Cloud → App Settings → Secrets**, then reboot the app"
+                    )
 
     # ════════════════════════════════════════════
     # DISTRIBUTION RESULTS (if applied)
