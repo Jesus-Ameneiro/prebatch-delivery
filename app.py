@@ -197,14 +197,21 @@ def _gh_headers():
         "Content-Type": "application/json",
     }
 
+def _gh_config():
+    """Return (repo, path, branch) from secrets."""
+    repo   = st.secrets.get("GITHUB_REPO", "")
+    path   = st.secrets.get("HISTORY_FILE_PATH", HISTORY_FILE)
+    branch = st.secrets.get("GITHUB_BRANCH", "main")
+    return repo, path, branch
+
 def _gh_file_url():
-    repo  = st.secrets.get("GITHUB_REPO", "")          # "owner/repo"
-    path  = st.secrets.get("HISTORY_FILE_PATH", HISTORY_FILE)
+    repo, path, _ = _gh_config()
     return f"https://api.github.com/repos/{repo}/contents/{path}", path
 
 def load_history_from_github():
     """Fetch batch_history.json from GitHub. Returns (history_dict, sha, error_msg)."""
-    url, _ = _gh_file_url()
+    repo, path, branch = _gh_config()
+    url = f"https://api.github.com/repos/{repo}/contents/{path}?ref={branch}"
     try:
         req = urllib.request.Request(url, headers=_gh_headers())
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -213,24 +220,28 @@ def load_history_from_github():
         return json.loads(content), data["sha"], None
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return {"MCC": [], "CS": []}, None, None   # file doesn't exist yet, fresh start
-        return None, None, f"GitHub HTTP {e.code}: {e.reason}"
+            return {"MCC": [], "CS": []}, None, None   # file doesn't exist yet — fresh start
+        body = ""
+        try: body = e.read().decode()
+        except Exception: pass
+        return None, None, f"GitHub HTTP {e.code} — {body}"
     except Exception as e:
         return None, None, str(e)
 
 def save_history_to_github(history_dict, sha):
-    """Push updated batch_history.json to GitHub. Returns (ok, error_msg)."""
-    url, path = _gh_file_url()
+    """Push updated batch_history.json to GitHub. Returns (ok, error_msg, new_sha)."""
+    repo, path, branch = _gh_config()
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
     content_b64 = base64.b64encode(
         json.dumps(history_dict, indent=2, ensure_ascii=False).encode("utf-8")
     ).decode()
     payload = {
         "message": f"Update batch history — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "content": content_b64,
-        "path": path,
+        "branch": branch,
     }
     if sha:
-        payload["sha"] = sha
+        payload["sha"] = sha   # required for updating an existing file
     try:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers=_gh_headers(), method="PUT")
@@ -242,7 +253,7 @@ def save_history_to_github(history_dict, sha):
         body = ""
         try: body = e.read().decode()
         except Exception: pass
-        return False, f"GitHub HTTP {e.code}: {body}", sha
+        return False, f"GitHub HTTP {e.code} — {body}", sha
     except Exception as e:
         return False, str(e), sha
 
@@ -433,6 +444,158 @@ with col2:
 with col3:
     pc_file = st.file_uploader("Conflict Check File", type=["csv","xlsx","xls"],
         help="Investigation data: machine overviews, notes, entity details, and case attribution.")
+
+
+# ──────────────────────────────────────────────
+# Batch Distribution Config (before generation)
+# ──────────────────────────────────────────────
+st.markdown("")
+st.markdown("""
+<div class="batch-section">
+    <h3>📦 Batch Distribution</h3>
+    <p>Configure how the generated cases will be distributed by country group and quota.
+       The distribution is applied immediately after generation when enabled.</p>
+</div>
+""", unsafe_allow_html=True)
+st.markdown("")
+
+enable_batch = st.toggle("Enable Batch Distribution", value=False, key="batch_toggle")
+
+if enable_batch:
+    _rp_for_config = region_code
+    _region_profiles = get_profile_names(_rp_for_config)
+    _default_name = st.session_state.dist_defaults.get(_rp_for_config)
+    _default_idx = _region_profiles.index(_default_name) if _default_name in _region_profiles else 0
+
+    ps_col, def_col, del_col = st.columns([3, 1.2, 1])
+    with ps_col:
+        selected_profile_name = st.selectbox("Distribution Profile", options=_region_profiles,
+                                              index=_default_idx, key="dist_select")
+    with def_col:
+        _is_default = (st.session_state.dist_defaults.get(_rp_for_config) == selected_profile_name)
+        st.markdown("<br>", unsafe_allow_html=True)
+        if _is_default:
+            st.success("Default ✓")
+        else:
+            if st.button("Set as Default", key="set_default_btn", use_container_width=True):
+                set_default(_rp_for_config, selected_profile_name); st.rerun()
+    with del_col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if len(_region_profiles) > 1:
+            if st.button("🗑 Delete", key="del_profile_btn", use_container_width=True):
+                delete_profile(_rp_for_config, selected_profile_name); st.rerun()
+        else:
+            st.button("🗑 Delete", disabled=True, use_container_width=True, key="del_profile_dis")
+
+    _selected_profile = get_profile(_rp_for_config, selected_profile_name)
+    if _selected_profile is None:
+        st.error("Profile not found. Please select another.")
+        st.stop()
+
+    if (st.session_state.editor_profile is None
+            or st.session_state.editor_profile.get("_editing_name") != selected_profile_name):
+        ep = copy.deepcopy(_selected_profile)
+        ep["_editing_name"] = selected_profile_name
+        st.session_state.editor_profile = ep
+
+    ep = st.session_state.editor_profile
+
+    priority_on = st.toggle(
+        "Prioritize cases with 3+ Total Machines", value=True, key="priority_toggle",
+        help=(
+            "ON — Within each group, cases with Total Machines ≥ 3 fill quota first, "
+            "then <3 machine cases complete the remainder. "
+            "OFF — Fill each group's quota by country availability only, no machine count ordering."
+        ),
+    )
+
+    with st.expander("✏️ Edit Profile", expanded=False):
+        new_name = st.text_input("Profile Name", value=ep["name"], key="ep_name")
+        ep["name"] = new_name
+        st.markdown("**Groups** — set countries and quota for each group.")
+        country_list = MCC_COUNTRIES if _rp_for_config == "MCC" else CS_COUNTRIES
+
+        groups_to_delete = []
+        for gi, grp in enumerate(ep["groups"]):
+            other_used = {c for gj, grp_j in enumerate(ep["groups"])
+                          if gj != gi for c in grp_j.get("countries", [])}
+            available_options = [c for c in country_list if c not in other_used]
+            current_selection = [c for c in grp.get("countries", []) if c in available_options]
+            with st.container():
+                gc1, gc2, gc3, gc4 = st.columns([2.5, 3, 1.2, 0.5])
+                with gc1:
+                    grp["name"] = st.text_input("Group Name", value=grp["name"],
+                                                 key=f"gname_{gi}", label_visibility="collapsed")
+                with gc2:
+                    grp["countries"] = st.multiselect(
+                        "Countries", options=available_options, default=current_selection,
+                        key=f"gcountries_{gi}", label_visibility="collapsed",
+                        help="Countries already assigned to another group are hidden.",
+                    )
+                with gc3:
+                    grp["quota"] = st.number_input("Quota", min_value=1, max_value=500,
+                                                    value=int(grp["quota"]), step=1,
+                                                    key=f"gquota_{gi}", label_visibility="collapsed")
+                with gc4:
+                    if st.button("✕", key=f"gdel_{gi}", help="Remove this group"):
+                        groups_to_delete.append(gi)
+
+        for gi in reversed(groups_to_delete):
+            ep["groups"].pop(gi)
+        if groups_to_delete: st.rerun()
+
+        total_quota = sum(g["quota"] for g in ep["groups"])
+        st.caption(f"Total quota across all groups: **{total_quota}** cases")
+
+        if st.button("＋ Add Group", key="add_group_btn"):
+            ep["groups"].append({"name": "New Group", "countries": [], "quota": 10}); st.rerun()
+
+        st.markdown("---")
+        save_col, saveas_col = st.columns(2)
+        with save_col:
+            if st.button("💾 Update Profile", type="primary", use_container_width=True, key="save_profile"):
+                profile_to_save = {k: v for k, v in ep.items() if not k.startswith("_")}
+                old_name = ep.get("_editing_name", "")
+                if old_name != profile_to_save["name"] and old_name:
+                    delete_profile(_rp_for_config, old_name)
+                    if st.session_state.dist_defaults.get(_rp_for_config) == old_name:
+                        set_default(_rp_for_config, profile_to_save["name"])
+                save_profile(_rp_for_config, profile_to_save)
+                ep["_editing_name"] = profile_to_save["name"]
+                st.success(f"Profile **{profile_to_save['name']}** saved.")
+                st.rerun()
+        with saveas_col:
+            new_profile_name = st.text_input("Save as new profile name", key="saveas_name",
+                                              placeholder="New profile name…")
+            if st.button("💾 Save as New", use_container_width=True, key="saveas_btn"):
+                if new_profile_name.strip():
+                    new_p = {k: v for k, v in ep.items() if not k.startswith("_")}
+                    new_p["name"] = new_profile_name.strip()
+                    save_profile(_rp_for_config, new_p)
+                    st.success(f"New profile **{new_p['name']}** created.")
+                    st.rerun()
+                else:
+                    st.warning("Enter a name for the new profile.")
+
+    with st.expander("⬆ Import / Export Profiles (JSON)", expanded=False):
+        exp_col, imp_col = st.columns(2)
+        with exp_col:
+            st.download_button("⬇ Export All Profiles as JSON", data=export_profiles_json(),
+                               file_name="batch_distributions.json", mime="application/json",
+                               use_container_width=True, key="export_json")
+        with imp_col:
+            imp_file = st.file_uploader("Import profiles JSON", type=["json"], key="import_json_file")
+            if imp_file:
+                try:
+                    import_profiles_json(imp_file.read().decode())
+                    st.success("Profiles imported successfully.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Import failed: {e}")
+else:
+    # Ensure editor state stays consistent when distribution is off
+    ep = None
+    priority_on = False
 
 
 # ──────────────────────────────────────────────
@@ -915,6 +1078,20 @@ if all_uploaded:
                     st.session_state.batch_report = None
                     st.session_state.batch_warnings = []
                     st.session_state.prebatch_ready_to_confirm = True
+
+                    # Auto-apply distribution if enabled
+                    if enable_batch and ep is not None:
+                        profile_clean = {k: v for k, v in ep.items() if not k.startswith("_")}
+                        try:
+                            batch_df, report, dist_warnings = apply_batch_distribution(
+                                result_df, profile_clean, region_code, priority_machines=priority_on
+                            )
+                            st.session_state.batch_result_df = batch_df
+                            st.session_state.batch_report = report
+                            st.session_state.batch_warnings = dist_warnings
+                        except Exception as dist_err:
+                            st.warning(f"Distribution could not be applied automatically: {dist_err}")
+
                     st.session_state.generation_log.append({
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "region": region_code, "total": len(result_df),
@@ -1098,218 +1275,60 @@ if st.session_state.result_df is not None:
                         "but could not be persisted. Check your GitHub secrets and retry.")
 
     # ════════════════════════════════════════════
-    # BATCH DISTRIBUTION SECTION
+    # DISTRIBUTION RESULTS (if applied)
     # ════════════════════════════════════════════
-    st.markdown("---")
-    st.markdown("""
-    <div class="batch-section">
-        <h3>📦 Batch Distribution</h3>
-        <p>Selectively distribute the generated cases by country group and quota.
-           Priority cases (3+ Total Machines) are placed first within each group.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("")
+    if st.session_state.batch_result_df is not None:
+        batch_df      = st.session_state.batch_result_df
+        report        = st.session_state.batch_report
+        warnings_list = st.session_state.batch_warnings
 
-    enable_batch = st.toggle("Enable Batch Distribution", value=False, key="batch_toggle")
+        st.markdown("---")
+        st.subheader(f"📦 Distribution Results — {report['profile_name']}")
+        for w in warnings_list: st.warning(w)
 
-    if enable_batch:
-        region_profiles = get_profile_names(rp)
-        default_name = st.session_state.dist_defaults.get(rp)
-        default_idx = region_profiles.index(default_name) if default_name in region_profiles else 0
+        gr_cols = st.columns(len(report["groups"]))
+        for col, grp in zip(gr_cols, report["groups"]):
+            overflow_note = (f" (+{grp['filled'] - (grp['quota'] - grp['shortfall'])} overflow)"
+                             if grp["overflow_from"] else "")
+            delta_val = "On target" if grp["shortfall"] == 0 else f"-{grp['shortfall']} short"
+            col.metric(label=grp["group"], value=f"{grp['filled']} / {grp['quota']}",
+                       delta=f"{delta_val}{overflow_note}",
+                       delta_color="normal" if grp["shortfall"] == 0 else "inverse")
 
-        ps_col, def_col, del_col = st.columns([3, 1.2, 1])
-        with ps_col:
-            selected_profile_name = st.selectbox("Distribution Profile", options=region_profiles,
-                                                  index=default_idx, key="dist_select")
-        with def_col:
-            is_default = (st.session_state.dist_defaults.get(rp) == selected_profile_name)
-            st.markdown("<br>", unsafe_allow_html=True)
-            if is_default:
-                st.success("Default ✓")
-            else:
-                if st.button("Set as Default", key="set_default_btn", use_container_width=True):
-                    set_default(rp, selected_profile_name); st.rerun()
-        with del_col:
-            st.markdown("<br>", unsafe_allow_html=True)
-            if len(region_profiles) > 1:
-                if st.button("🗑 Delete", key="del_profile_btn", use_container_width=True):
-                    delete_profile(rp, selected_profile_name); st.rerun()
-            else:
-                st.button("🗑 Delete", disabled=True, use_container_width=True, key="del_profile_dis")
+        t1, t2 = st.columns(2)
+        t1.metric("Total Selected for Batch", report["total_selected"])
+        t2.metric("Total Backlog (not selected)", report["total_backlog"])
 
-        selected_profile = get_profile(rp, selected_profile_name)
-        if selected_profile is None:
-            st.error("Profile not found. Please select another.")
-            st.stop()
-
-        if (st.session_state.editor_profile is None
-                or st.session_state.editor_profile.get("_editing_name") != selected_profile_name):
-            ep = copy.deepcopy(selected_profile)
-            ep["_editing_name"] = selected_profile_name
-            st.session_state.editor_profile = ep
-
-        ep = st.session_state.editor_profile
-
-        priority_on = st.toggle(
-            "Prioritize cases with 3+ Total Machines", value=True, key="priority_toggle",
-            help=(
-                "ON — Within each group, cases with Total Machines ≥ 3 fill quota first, "
-                "then <3 machine cases complete the remainder. "
-                "OFF — Fill each group's quota by country availability only, no machine count ordering."
-            ),
+        st.subheader("Distributed Batch Preview")
+        st.dataframe(batch_df, use_container_width=True, height=350)
+        st.download_button(
+            label=f"⬇ Download Batch_{rp}_{report['profile_name'].replace(' ','_')}.xlsx",
+            data=to_excel(batch_df, sheet_name="Batch"),
+            file_name=f"Batch_{rp}_{report['profile_name'].replace(' ','_')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary", use_container_width=True, key="dl_batch",
         )
 
-        with st.expander("✏️ Edit Profile", expanded=False):
-            new_name = st.text_input("Profile Name", value=ep["name"], key="ep_name")
-            ep["name"] = new_name
-            st.markdown("**Groups** — set countries and quota for each group.")
-            country_list = MCC_COUNTRIES if rp == "MCC" else CS_COUNTRIES
-
-            groups_to_delete = []
-            for gi, grp in enumerate(ep["groups"]):
-                other_used = {c for gj, grp_j in enumerate(ep["groups"])
-                              if gj != gi for c in grp_j.get("countries", [])}
-                available_options = [c for c in country_list if c not in other_used]
-                current_selection = [c for c in grp.get("countries", []) if c in available_options]
-                with st.container():
-                    gc1, gc2, gc3, gc4 = st.columns([2.5, 3, 1.2, 0.5])
-                    with gc1:
-                        grp["name"] = st.text_input("Group Name", value=grp["name"],
-                                                     key=f"gname_{gi}", label_visibility="collapsed")
-                    with gc2:
-                        grp["countries"] = st.multiselect(
-                            "Countries", options=available_options, default=current_selection,
-                            key=f"gcountries_{gi}", label_visibility="collapsed",
-                            help="Countries already assigned to another group are hidden.",
-                        )
-                    with gc3:
-                        grp["quota"] = st.number_input("Quota", min_value=1, max_value=500,
-                                                        value=int(grp["quota"]), step=1,
-                                                        key=f"gquota_{gi}", label_visibility="collapsed")
-                    with gc4:
-                        if st.button("✕", key=f"gdel_{gi}", help="Remove this group"):
-                            groups_to_delete.append(gi)
-
-            for gi in reversed(groups_to_delete):
-                ep["groups"].pop(gi)
-            if groups_to_delete: st.rerun()
-
-            total_quota = sum(g["quota"] for g in ep["groups"])
-            st.caption(f"Total quota across all groups: **{total_quota}** cases")
-
-            if st.button("＋ Add Group", key="add_group_btn"):
-                ep["groups"].append({"name": "New Group", "countries": [], "quota": 10}); st.rerun()
-
-            st.markdown("---")
-            save_col, saveas_col = st.columns(2)
-            with save_col:
-                if st.button("💾 Update Profile", type="primary", use_container_width=True, key="save_profile"):
-                    profile_to_save = {k: v for k, v in ep.items() if not k.startswith("_")}
-                    old_name = ep.get("_editing_name", "")
-                    if old_name != profile_to_save["name"] and old_name:
-                        delete_profile(rp, old_name)
-                        if st.session_state.dist_defaults.get(rp) == old_name:
-                            set_default(rp, profile_to_save["name"])
-                    save_profile(rp, profile_to_save)
-                    ep["_editing_name"] = profile_to_save["name"]
-                    st.success(f"Profile **{profile_to_save['name']}** saved.")
-                    st.rerun()
-            with saveas_col:
-                new_profile_name = st.text_input("Save as new profile name", key="saveas_name",
-                                                  placeholder="New profile name…")
-                if st.button("💾 Save as New", use_container_width=True, key="saveas_btn"):
-                    if new_profile_name.strip():
-                        new_p = {k: v for k, v in ep.items() if not k.startswith("_")}
-                        new_p["name"] = new_profile_name.strip()
-                        save_profile(rp, new_p)
-                        st.success(f"New profile **{new_p['name']}** created.")
-                        st.rerun()
-                    else:
-                        st.warning("Enter a name for the new profile.")
-
-        with st.expander("⬆ Import / Export Profiles (JSON)", expanded=False):
-            exp_col, imp_col = st.columns(2)
-            with exp_col:
-                st.download_button("⬇ Export All Profiles as JSON", data=export_profiles_json(),
-                                   file_name="batch_distributions.json", mime="application/json",
-                                   use_container_width=True, key="export_json")
-            with imp_col:
-                imp_file = st.file_uploader("Import profiles JSON", type=["json"], key="import_json_file")
-                if imp_file:
-                    try:
-                        import_profiles_json(imp_file.read().decode())
-                        st.success("Profiles imported successfully.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Import failed: {e}")
-
-        st.markdown("")
-        if st.button("▶ Apply Batch Distribution", type="primary", use_container_width=True, key="apply_batch"):
-            profile_clean = {k: v for k, v in ep.items() if not k.startswith("_")}
-            with st.spinner("Applying distribution..."):
-                try:
-                    batch_df, report, warnings = apply_batch_distribution(
-                        result_df, profile_clean, rp, priority_machines=priority_on
-                    )
-                    st.session_state.batch_result_df = batch_df
-                    st.session_state.batch_report = report
-                    st.session_state.batch_warnings = warnings
-                except Exception as e:
-                    st.error(f"Error applying distribution: {e}")
-                    st.exception(e)
-
-        if st.session_state.batch_result_df is not None:
-            batch_df = st.session_state.batch_result_df
-            report    = st.session_state.batch_report
-            warnings_list = st.session_state.batch_warnings
-
-            st.markdown("---")
-            st.subheader(f"Distribution Results — {report['profile_name']}")
-            for w in warnings_list: st.warning(w)
-
-            gr_cols = st.columns(len(report["groups"]))
-            for col, grp in zip(gr_cols, report["groups"]):
-                overflow_note = (f" (+{grp['filled'] - (grp['quota'] - grp['shortfall'])} overflow)"
-                                 if grp["overflow_from"] else "")
-                delta_val = "On target" if grp["shortfall"] == 0 else f"-{grp['shortfall']} short"
-                col.metric(label=grp["group"], value=f"{grp['filled']} / {grp['quota']}",
-                           delta=f"{delta_val}{overflow_note}",
-                           delta_color="normal" if grp["shortfall"] == 0 else "inverse")
-
-            t1, t2 = st.columns(2)
-            t1.metric("Total Selected for Batch", report["total_selected"])
-            t2.metric("Total Backlog (not selected)", report["total_backlog"])
-
-            st.subheader("Batch Preview")
-            st.dataframe(batch_df, use_container_width=True, height=350)
+        if not report["backlog_table"].empty:
+            st.markdown("")
+            st.markdown("""
+            <div class="backlog-card">
+                <strong style="color:#F47920;">📋 Backlog Report — Available for Next Batch</strong><br>
+                <span style="font-size:0.85rem;color:#4A4A4A;">
+                Cases remaining after this batch distribution, broken down by country.
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("")
+            st.dataframe(report["backlog_table"], use_container_width=True, hide_index=True,
+                         height=min(35 * len(report["backlog_table"]) + 40, 400))
             st.download_button(
-                label=f"⬇ Download Batch_{rp}_{report['profile_name'].replace(' ','_')}.xlsx",
-                data=to_excel(batch_df, sheet_name="Batch"),
-                file_name=f"Batch_{rp}_{report['profile_name'].replace(' ','_')}.xlsx",
+                "⬇ Download Backlog Report",
+                data=to_excel(report["backlog_table"], sheet_name="Backlog"),
+                file_name=f"Backlog_{rp}_{report['profile_name'].replace(' ','_')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary", use_container_width=True, key="dl_batch",
+                key="dl_backlog",
             )
-
-            if not report["backlog_table"].empty:
-                st.markdown("")
-                st.markdown("""
-                <div class="backlog-card">
-                    <strong style="color:#F47920;">📋 Backlog Report — Available for Next Batch</strong><br>
-                    <span style="font-size:0.85rem;color:#4A4A4A;">
-                    Cases remaining after this batch distribution, broken down by country.
-                    </span>
-                </div>
-                """, unsafe_allow_html=True)
-                st.markdown("")
-                st.dataframe(report["backlog_table"], use_container_width=True, hide_index=True,
-                             height=min(35 * len(report["backlog_table"]) + 40, 400))
-                st.download_button(
-                    "⬇ Download Backlog Report",
-                    data=to_excel(report["backlog_table"], sheet_name="Backlog"),
-                    file_name=f"Backlog_{rp}_{report['profile_name'].replace(' ','_')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="dl_backlog",
-                )
 
 
 # ──────────────────────────────────────────────
