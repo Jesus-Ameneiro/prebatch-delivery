@@ -447,158 +447,6 @@ with col3:
 
 
 # ──────────────────────────────────────────────
-# Batch Distribution Config (before generation)
-# ──────────────────────────────────────────────
-st.markdown("")
-st.markdown("""
-<div class="batch-section">
-    <h3>📦 Batch Distribution</h3>
-    <p>Configure how the generated cases will be distributed by country group and quota.
-       The distribution is applied immediately after generation when enabled.</p>
-</div>
-""", unsafe_allow_html=True)
-st.markdown("")
-
-enable_batch = st.toggle("Enable Batch Distribution", value=False, key="batch_toggle")
-
-if enable_batch:
-    _rp_for_config = region_code
-    _region_profiles = get_profile_names(_rp_for_config)
-    _default_name = st.session_state.dist_defaults.get(_rp_for_config)
-    _default_idx = _region_profiles.index(_default_name) if _default_name in _region_profiles else 0
-
-    ps_col, def_col, del_col = st.columns([3, 1.2, 1])
-    with ps_col:
-        selected_profile_name = st.selectbox("Distribution Profile", options=_region_profiles,
-                                              index=_default_idx, key="dist_select")
-    with def_col:
-        _is_default = (st.session_state.dist_defaults.get(_rp_for_config) == selected_profile_name)
-        st.markdown("<br>", unsafe_allow_html=True)
-        if _is_default:
-            st.success("Default ✓")
-        else:
-            if st.button("Set as Default", key="set_default_btn", use_container_width=True):
-                set_default(_rp_for_config, selected_profile_name); st.rerun()
-    with del_col:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if len(_region_profiles) > 1:
-            if st.button("🗑 Delete", key="del_profile_btn", use_container_width=True):
-                delete_profile(_rp_for_config, selected_profile_name); st.rerun()
-        else:
-            st.button("🗑 Delete", disabled=True, use_container_width=True, key="del_profile_dis")
-
-    _selected_profile = get_profile(_rp_for_config, selected_profile_name)
-    if _selected_profile is None:
-        st.error("Profile not found. Please select another.")
-        st.stop()
-
-    if (st.session_state.editor_profile is None
-            or st.session_state.editor_profile.get("_editing_name") != selected_profile_name):
-        ep = copy.deepcopy(_selected_profile)
-        ep["_editing_name"] = selected_profile_name
-        st.session_state.editor_profile = ep
-
-    ep = st.session_state.editor_profile
-
-    priority_on = st.toggle(
-        "Prioritize cases with 3+ Total Machines", value=True, key="priority_toggle",
-        help=(
-            "ON — Within each group, cases with Total Machines ≥ 3 fill quota first, "
-            "then <3 machine cases complete the remainder. "
-            "OFF — Fill each group's quota by country availability only, no machine count ordering."
-        ),
-    )
-
-    with st.expander("✏️ Edit Profile", expanded=False):
-        new_name = st.text_input("Profile Name", value=ep["name"], key="ep_name")
-        ep["name"] = new_name
-        st.markdown("**Groups** — set countries and quota for each group.")
-        country_list = MCC_COUNTRIES if _rp_for_config == "MCC" else CS_COUNTRIES
-
-        groups_to_delete = []
-        for gi, grp in enumerate(ep["groups"]):
-            other_used = {c for gj, grp_j in enumerate(ep["groups"])
-                          if gj != gi for c in grp_j.get("countries", [])}
-            available_options = [c for c in country_list if c not in other_used]
-            current_selection = [c for c in grp.get("countries", []) if c in available_options]
-            with st.container():
-                gc1, gc2, gc3, gc4 = st.columns([2.5, 3, 1.2, 0.5])
-                with gc1:
-                    grp["name"] = st.text_input("Group Name", value=grp["name"],
-                                                 key=f"gname_{gi}", label_visibility="collapsed")
-                with gc2:
-                    grp["countries"] = st.multiselect(
-                        "Countries", options=available_options, default=current_selection,
-                        key=f"gcountries_{gi}", label_visibility="collapsed",
-                        help="Countries already assigned to another group are hidden.",
-                    )
-                with gc3:
-                    grp["quota"] = st.number_input("Quota", min_value=1, max_value=500,
-                                                    value=int(grp["quota"]), step=1,
-                                                    key=f"gquota_{gi}", label_visibility="collapsed")
-                with gc4:
-                    if st.button("✕", key=f"gdel_{gi}", help="Remove this group"):
-                        groups_to_delete.append(gi)
-
-        for gi in reversed(groups_to_delete):
-            ep["groups"].pop(gi)
-        if groups_to_delete: st.rerun()
-
-        total_quota = sum(g["quota"] for g in ep["groups"])
-        st.caption(f"Total quota across all groups: **{total_quota}** cases")
-
-        if st.button("＋ Add Group", key="add_group_btn"):
-            ep["groups"].append({"name": "New Group", "countries": [], "quota": 10}); st.rerun()
-
-        st.markdown("---")
-        save_col, saveas_col = st.columns(2)
-        with save_col:
-            if st.button("💾 Update Profile", type="primary", use_container_width=True, key="save_profile"):
-                profile_to_save = {k: v for k, v in ep.items() if not k.startswith("_")}
-                old_name = ep.get("_editing_name", "")
-                if old_name != profile_to_save["name"] and old_name:
-                    delete_profile(_rp_for_config, old_name)
-                    if st.session_state.dist_defaults.get(_rp_for_config) == old_name:
-                        set_default(_rp_for_config, profile_to_save["name"])
-                save_profile(_rp_for_config, profile_to_save)
-                ep["_editing_name"] = profile_to_save["name"]
-                st.success(f"Profile **{profile_to_save['name']}** saved.")
-                st.rerun()
-        with saveas_col:
-            new_profile_name = st.text_input("Save as new profile name", key="saveas_name",
-                                              placeholder="New profile name…")
-            if st.button("💾 Save as New", use_container_width=True, key="saveas_btn"):
-                if new_profile_name.strip():
-                    new_p = {k: v for k, v in ep.items() if not k.startswith("_")}
-                    new_p["name"] = new_profile_name.strip()
-                    save_profile(_rp_for_config, new_p)
-                    st.success(f"New profile **{new_p['name']}** created.")
-                    st.rerun()
-                else:
-                    st.warning("Enter a name for the new profile.")
-
-    with st.expander("⬆ Import / Export Profiles (JSON)", expanded=False):
-        exp_col, imp_col = st.columns(2)
-        with exp_col:
-            st.download_button("⬇ Export All Profiles as JSON", data=export_profiles_json(),
-                               file_name="batch_distributions.json", mime="application/json",
-                               use_container_width=True, key="export_json")
-        with imp_col:
-            imp_file = st.file_uploader("Import profiles JSON", type=["json"], key="import_json_file")
-            if imp_file:
-                try:
-                    import_profiles_json(imp_file.read().decode())
-                    st.success("Profiles imported successfully.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Import failed: {e}")
-else:
-    # Ensure editor state stays consistent when distribution is off
-    ep = None
-    priority_on = False
-
-
-# ──────────────────────────────────────────────
 # Helper Functions
 # ──────────────────────────────────────────────
 
@@ -963,6 +811,175 @@ def next_batch_number(region):
         return max(int(b.get("batch_number", 0)) for b in batches) + 1
     except Exception:
         return len(batches) + 1
+
+
+# ──────────────────────────────────────────────
+# Batch Distribution Config (after all functions)
+# ──────────────────────────────────────────────
+st.markdown("")
+st.markdown("""
+<div class="batch-section">
+    <h3>📦 Batch Distribution</h3>
+    <p>Optional tool to automatically distribute large Pleteo exports by country group and quota,
+       without manually selecting cases. Use this when working with large batches where cases
+       haven't been pre-selected. If cases were already manually curated for delivery,
+       skip this section and proceed directly to Generate.</p>
+</div>
+""", unsafe_allow_html=True)
+st.markdown("")
+
+enable_batch = st.toggle(
+    "Enable Batch Distribution",
+    value=False, key="batch_toggle",
+    help=(
+        "Use this when you have a large Pleteo export and want the app to automatically "
+        "select cases by country group and quota. "
+        "If you've already manually selected the cases for this delivery, leave this off."
+    ),
+)
+
+if enable_batch:
+    st.info(
+        "💡 **About Batch Distribution:** This tool helps deliver large batches from a full "
+        "Pleteo case export without manually picking cases. It selects cases automatically based "
+        "on country group quotas. If you already have a curated list of cases for this batch, "
+        "you don't need to use this — simply generate the Prebatch file directly.",
+        icon=None,
+    )
+
+    _rp_for_config = region_code
+    _region_profiles = get_profile_names(_rp_for_config)
+    _default_name = st.session_state.dist_defaults.get(_rp_for_config)
+    _default_idx = _region_profiles.index(_default_name) if _default_name in _region_profiles else 0
+
+    ps_col, def_col, del_col = st.columns([3, 1.2, 1])
+    with ps_col:
+        selected_profile_name = st.selectbox("Distribution Profile", options=_region_profiles,
+                                              index=_default_idx, key="dist_select")
+    with def_col:
+        _is_default = (st.session_state.dist_defaults.get(_rp_for_config) == selected_profile_name)
+        st.markdown("<br>", unsafe_allow_html=True)
+        if _is_default:
+            st.success("Default ✓")
+        else:
+            if st.button("Set as Default", key="set_default_btn", use_container_width=True):
+                set_default(_rp_for_config, selected_profile_name); st.rerun()
+    with del_col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if len(_region_profiles) > 1:
+            if st.button("🗑 Delete", key="del_profile_btn", use_container_width=True):
+                delete_profile(_rp_for_config, selected_profile_name); st.rerun()
+        else:
+            st.button("🗑 Delete", disabled=True, use_container_width=True, key="del_profile_dis")
+
+    _selected_profile = get_profile(_rp_for_config, selected_profile_name)
+    if _selected_profile is None:
+        st.error("Profile not found. Please select another.")
+        st.stop()
+
+    if (st.session_state.editor_profile is None
+            or st.session_state.editor_profile.get("_editing_name") != selected_profile_name):
+        ep = copy.deepcopy(_selected_profile)
+        ep["_editing_name"] = selected_profile_name
+        st.session_state.editor_profile = ep
+
+    ep = st.session_state.editor_profile
+
+    priority_on = st.toggle(
+        "Prioritize cases with 3+ Total Machines", value=True, key="priority_toggle",
+        help=(
+            "ON — Within each group, cases with Total Machines ≥ 3 from the Pleteo export "
+            "fill the quota first; remaining slots are filled with <3 machine cases. "
+            "OFF — Fill each group's quota purely by country availability, no machine count ordering."
+        ),
+    )
+
+    with st.expander("✏️ Edit Profile", expanded=False):
+        new_name = st.text_input("Profile Name", value=ep["name"], key="ep_name")
+        ep["name"] = new_name
+        st.markdown("**Groups** — set countries and quota for each group.")
+        country_list = MCC_COUNTRIES if _rp_for_config == "MCC" else CS_COUNTRIES
+
+        groups_to_delete = []
+        for gi, grp in enumerate(ep["groups"]):
+            other_used = {c for gj, grp_j in enumerate(ep["groups"])
+                          if gj != gi for c in grp_j.get("countries", [])}
+            available_options = [c for c in country_list if c not in other_used]
+            current_selection = [c for c in grp.get("countries", []) if c in available_options]
+            with st.container():
+                gc1, gc2, gc3, gc4 = st.columns([2.5, 3, 1.2, 0.5])
+                with gc1:
+                    grp["name"] = st.text_input("Group Name", value=grp["name"],
+                                                 key=f"gname_{gi}", label_visibility="collapsed")
+                with gc2:
+                    grp["countries"] = st.multiselect(
+                        "Countries", options=available_options, default=current_selection,
+                        key=f"gcountries_{gi}", label_visibility="collapsed",
+                        help="Countries already assigned to another group are hidden.",
+                    )
+                with gc3:
+                    grp["quota"] = st.number_input("Quota", min_value=1, max_value=500,
+                                                    value=int(grp["quota"]), step=1,
+                                                    key=f"gquota_{gi}", label_visibility="collapsed")
+                with gc4:
+                    if st.button("✕", key=f"gdel_{gi}", help="Remove this group"):
+                        groups_to_delete.append(gi)
+
+        for gi in reversed(groups_to_delete):
+            ep["groups"].pop(gi)
+        if groups_to_delete: st.rerun()
+
+        total_quota = sum(g["quota"] for g in ep["groups"])
+        st.caption(f"Total quota across all groups: **{total_quota}** cases")
+
+        if st.button("＋ Add Group", key="add_group_btn"):
+            ep["groups"].append({"name": "New Group", "countries": [], "quota": 10}); st.rerun()
+
+        st.markdown("---")
+        save_col, saveas_col = st.columns(2)
+        with save_col:
+            if st.button("💾 Update Profile", type="primary", use_container_width=True, key="save_profile"):
+                profile_to_save = {k: v for k, v in ep.items() if not k.startswith("_")}
+                old_name = ep.get("_editing_name", "")
+                if old_name != profile_to_save["name"] and old_name:
+                    delete_profile(_rp_for_config, old_name)
+                    if st.session_state.dist_defaults.get(_rp_for_config) == old_name:
+                        set_default(_rp_for_config, profile_to_save["name"])
+                save_profile(_rp_for_config, profile_to_save)
+                ep["_editing_name"] = profile_to_save["name"]
+                st.success(f"Profile **{profile_to_save['name']}** saved.")
+                st.rerun()
+        with saveas_col:
+            new_profile_name = st.text_input("Save as new profile name", key="saveas_name",
+                                              placeholder="New profile name…")
+            if st.button("💾 Save as New", use_container_width=True, key="saveas_btn"):
+                if new_profile_name.strip():
+                    new_p = {k: v for k, v in ep.items() if not k.startswith("_")}
+                    new_p["name"] = new_profile_name.strip()
+                    save_profile(_rp_for_config, new_p)
+                    st.success(f"New profile **{new_p['name']}** created.")
+                    st.rerun()
+                else:
+                    st.warning("Enter a name for the new profile.")
+
+    with st.expander("⬆ Import / Export Profiles (JSON)", expanded=False):
+        exp_col, imp_col = st.columns(2)
+        with exp_col:
+            st.download_button("⬇ Export All Profiles as JSON", data=export_profiles_json(),
+                               file_name="batch_distributions.json", mime="application/json",
+                               use_container_width=True, key="export_json")
+        with imp_col:
+            imp_file = st.file_uploader("Import profiles JSON", type=["json"], key="import_json_file")
+            if imp_file:
+                try:
+                    import_profiles_json(imp_file.read().decode())
+                    st.success("Profiles imported successfully.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Import failed: {e}")
+else:
+    ep = None
+    priority_on = False
 
 
 # ──────────────────────────────────────────────
