@@ -42,6 +42,7 @@ st.markdown("""
     :root {
         --rx-orange: #F47920; --rx-orange-dark: #D4611A;
         --rx-black: #1A1A1A;  --rx-dark-gray: #2D2D2D; --rx-mid-gray: #4A4A4A;
+        --rx-blue: #1E6FBF;   --rx-blue-dark: #155A9C;
     }
     header[data-testid="stHeader"] {
         background-color: var(--rx-black) !important;
@@ -107,6 +108,47 @@ st.markdown("""
     }
     .val-ok  { color: #2E7D32; font-weight: 600; }
     .val-err { color: #B71C1C; font-weight: 600; }
+    /* ── Region indicator banner ── */
+    .rx-region-mcc {
+        display: flex; align-items: center; gap: 1rem;
+        background: linear-gradient(135deg, #1A1A1A 0%, #2D2D2D 100%);
+        border: 2px solid #F47920; border-radius: 10px;
+        padding: 0.9rem 1.4rem; margin-bottom: 0.8rem;
+    }
+    .rx-region-cs {
+        display: flex; align-items: center; gap: 1rem;
+        background: linear-gradient(135deg, #0D1B2A 0%, #1A2E45 100%);
+        border: 2px solid #1E6FBF; border-radius: 10px;
+        padding: 0.9rem 1.4rem; margin-bottom: 0.8rem;
+    }
+    .rx-region-badge-mcc {
+        background: #F47920; color: white; font-weight: 800;
+        font-size: 1.1rem; padding: 0.3rem 0.9rem; border-radius: 6px;
+        letter-spacing: 1px; white-space: nowrap;
+    }
+    .rx-region-badge-cs {
+        background: #1E6FBF; color: white; font-weight: 800;
+        font-size: 1.1rem; padding: 0.3rem 0.9rem; border-radius: 6px;
+        letter-spacing: 1px; white-space: nowrap;
+    }
+    .rx-region-text { flex: 1; }
+    .rx-region-text h3 { margin: 0 !important; font-size: 1rem !important; }
+    .rx-region-text p  { margin: 0.1rem 0 0 0 !important; font-size: 0.82rem !important; color: #B0B0B0 !important; }
+    .rx-region-mcc .rx-region-text h3 { color: #F47920 !important; }
+    .rx-region-cs  .rx-region-text h3 { color: #1E6FBF !important; }
+    /* ── Region-coloured batch section ── */
+    .batch-section-mcc {
+        background: linear-gradient(135deg, #1A1A1A 0%, #2D2D2D 100%);
+        border: 1px solid #F47920; border-radius: 10px; padding: 1.2rem 1.5rem; margin-top: 0.5rem;
+    }
+    .batch-section-mcc h3 { color: #F47920 !important; margin: 0 0 0.3rem 0 !important; font-size: 1.1rem !important; }
+    .batch-section-mcc p  { color: #B0B0B0 !important; font-size: 0.88rem !important; margin: 0 !important; }
+    .batch-section-cs {
+        background: linear-gradient(135deg, #0D1B2A 0%, #1A2E45 100%);
+        border: 1px solid #1E6FBF; border-radius: 10px; padding: 1.2rem 1.5rem; margin-top: 0.5rem;
+    }
+    .batch-section-cs h3 { color: #1E6FBF !important; margin: 0 0 0.3rem 0 !important; font-size: 1.1rem !important; }
+    .batch-section-cs p  { color: #B0B0B0 !important; font-size: 0.88rem !important; margin: 0 !important; }
     .batch-section {
         background: linear-gradient(135deg, #1A1A1A 0%, #2D2D2D 100%);
         border: 1px solid #F47920; border-radius: 10px; padding: 1.2rem 1.5rem; margin-top: 1rem;
@@ -517,12 +559,72 @@ with st.sidebar:
 
 
 # ──────────────────────────────────────────────
-# Region + File Uploaders
+# Region Selector + File Uploaders
 # ──────────────────────────────────────────────
-region = st.radio("Select Region",
-    options=["MCC (México Central Caribe)", "CS (Cono Sur)"], horizontal=True,
-    help="MCC: Mexico, Central America, Caribbean  —  CS: South America")
-region_code = "MCC" if "MCC" in region else "CS"
+
+# Initialise region in session state
+if "region_choice" not in st.session_state:
+    st.session_state.region_choice = "MCC"
+
+rc1, rc2 = st.columns(2)
+with rc1:
+    if st.button(
+        "🟠  MCC — México Central Caribe",
+        use_container_width=True,
+        type="primary" if st.session_state.region_choice == "MCC" else "secondary",
+        key="btn_mcc",
+    ):
+        st.session_state.region_choice = "MCC"
+        st.rerun()
+with rc2:
+    if st.button(
+        "🔵  CS — Cono Sur",
+        use_container_width=True,
+        type="primary" if st.session_state.region_choice == "CS" else "secondary",
+        key="btn_cs",
+    ):
+        st.session_state.region_choice = "CS"
+        st.rerun()
+
+region_code = st.session_state.region_choice
+
+# Inject region-specific CSS overrides so primary button reflects region colour
+if region_code == "CS":
+    st.markdown("""
+    <style>
+        button[kind="primary"] {
+            background-color: #1E6FBF !important;
+            border-color: #1E6FBF !important;
+        }
+        button[kind="primary"]:hover {
+            background-color: #155A9C !important;
+            border-color: #155A9C !important;
+        }
+        [data-testid="stMetric"] { border-top-color: #1E6FBF !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Region indicator banner
+if region_code == "MCC":
+    st.markdown("""
+    <div class="rx-region-mcc">
+        <span class="rx-region-badge-mcc">MCC</span>
+        <div class="rx-region-text">
+            <h3>México Central Caribe</h3>
+            <p>Mexico · Costa Rica · Panama · Dominican Republic · Honduras · Belize · Guatemala · Nicaragua · El Salvador</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div class="rx-region-cs">
+        <span class="rx-region-badge-cs">CS</span>
+        <div class="rx-region-text">
+            <h3>Cono Sur</h3>
+            <p>Chile · Argentina · Colombia · Ecuador · Peru · Uruguay · Bolivia · Paraguay</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # Reset validation when region changes
 if st.session_state.get("_last_region") != region_code:
@@ -1020,9 +1122,10 @@ def next_batch_number(region):
 # ──────────────────────────────────────────────
 # Batch Distribution Config (after all functions)
 # ──────────────────────────────────────────────
+_batch_cls = "batch-section-mcc" if region_code == "MCC" else "batch-section-cs"
 st.markdown("")
-st.markdown("""
-<div class="batch-section">
+st.markdown(f"""
+<div class="{_batch_cls}">
     <h3>📦 Batch Distribution</h3>
     <p>Optional tool to automatically distribute large Pleteo exports by country group and quota,
        without manually selecting cases. Use this when working with large batches where cases
