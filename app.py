@@ -766,106 +766,210 @@ def case_matches_group(country_val: str, group_countries: list) -> bool:
     cv = str(country_val).lower()
     return any(gc.lower() in cv for gc in group_countries)
 
-def apply_batch_distribution(df, distribution, region_code, priority_machines=True):
+def apply_batch_distribution(df, distribution, region_code, batch_type="standard"):
+    """
+    batch_type:
+        "standard"    — fill by country availability, no machine filtering
+        "low"         — <3 machines only, fill by country, overflow any unused <3
+        "golden"      — 3+ first, overflow unused 3+, then fill remainder with anything; warn if <3 used
+        "traditional" — 50% global 3+ by country, then 50% <3 by country, then overflow anything
+    """
     country_col = "Countries" if region_code == "MCC" else "Country"
     df_work = df.copy().reset_index(drop=True)
     df_work["_m"] = pd.to_numeric(df_work["# All Time Machines"], errors="coerce").fillna(0)
-    if priority_machines:
-        df_work["_p"] = (df_work["_m"] >= 3).astype(int)
-        df_work = df_work.sort_values(["_p", "_m"], ascending=[False, False])
-    else:
-        df_work = df_work.sort_values("_m", ascending=False)
-    df_work = df_work.reset_index(drop=True)
 
-    group_pools = []
-    assigned = set()
-    for group in distribution["groups"]:
-        pool_idx = df_work.index[
-            df_work[country_col].apply(lambda v: case_matches_group(v, group["countries"]))
-            & ~df_work.index.isin(assigned)
-        ].tolist()
-        group_pools.append(pool_idx)
-        assigned.update(pool_idx)
+    groups       = distribution["groups"]
+    total_quota  = sum(g["quota"] for g in groups)
+    n_groups     = len(groups)
 
-    group_selections = []
-    group_reports = []
-    used = set()
+    warnings         = []
+    group_selections = [[] for _ in range(n_groups)]
+    used             = set()
 
-    for group, pool in zip(distribution["groups"], group_pools):
-        quota = group["quota"]
-        available = [i for i in pool if i not in used]
-        selected = available[:quota]
-        used.update(selected)
-        shortfall = quota - len(selected)
-        group_selections.append(selected)
-        group_reports.append({
-            "group": group["name"], "quota": quota,
-            "filled": len(selected), "shortfall": shortfall,
-            "overflow_from": [],
-        })
+    # ── Build per-group country pools from the full dataset ──
+    def country_pool(source_idx, group):
+        return [i for i in source_idx
+                if i not in used
+                and case_matches_group(df_work.loc[i, country_col], group["countries"])]
 
-    warnings = []
-    for i, (group, report) in enumerate(zip(distribution["groups"], group_reports)):
-        if report["shortfall"] <= 0: continue
-        still_needed = report["shortfall"]
-        for j, (other_group, other_pool) in enumerate(zip(distribution["groups"], group_pools)):
-            if j == i or still_needed <= 0: continue
-            overflow_available = [idx for idx in other_pool if idx not in used]
-            if not overflow_available: continue
-            take = overflow_available[:still_needed]
-            group_selections[i].extend(take)
+    # ── Generic first-pass fill ──
+    def fill_groups(source_idx, per_group_caps=None):
+        """Fill each group from source_idx up to its cap (or group quota if cap not given)."""
+        for gi, group in enumerate(groups):
+            cap = per_group_caps[gi] if per_group_caps else group["quota"]
+            already = len(group_selections[gi])
+            remaining = cap - already
+            if remaining <= 0:
+                continue
+            pool = country_pool(source_idx, group)
+            take = pool[:remaining]
+            group_selections[gi].extend(take)
             used.update(take)
-            report["filled"] += len(take)
-            report["overflow_from"].append(f"**{other_group['name']}** ({len(take)} cases)")
-            still_needed -= len(take)
 
-        actual_shortfall = report["quota"] - report["filled"]
-        if report["overflow_from"]:
-            warnings.append(
-                f"⚠️ Group **{group['name']}** quota of {group['quota']} was not fully met. "
-                f"Completed with overflow from: {', '.join(report['overflow_from'])}."
-            )
-        if actual_shortfall > 0:
-            warnings.append(
-                f"🚨 Group **{group['name']}** is still short by **{actual_shortfall}** case(s) "
-                f"after exhausting all available pools."
-            )
-        report["shortfall"] = actual_shortfall
+    # ── Overflow: fill shortfalls from any eligible pool, from other groups' countries ──
+    def overflow_fill(eligible_idx):
+        """After main passes, fill any remaining shortfalls from eligible_idx."""
+        for gi, group in enumerate(groups):
+            shortfall = group["quota"] - len(group_selections[gi])
+            if shortfall <= 0:
+                continue
+            # Borrow from eligible pool regardless of country
+            available = [i for i in eligible_idx if i not in used]
+            take = available[:shortfall]
+            if take:
+                group_selections[gi].extend(take)
+                used.update(take)
 
+    # ────────────────────────────────────────────
+    # STANDARD
+    # ────────────────────────────────────────────
+    if batch_type == "standard":
+        all_idx = list(df_work.index)
+        fill_groups(all_idx)
+        overflow_fill(all_idx)
+
+    # ────────────────────────────────────────────
+    # LOW  (<3 machines only)
+    # ────────────────────────────────────────────
+    elif batch_type == "low":
+        low_idx = df_work[df_work["_m"] < 3].index.tolist()
+        fill_groups(low_idx)
+        overflow_fill(low_idx)
+
+    # ────────────────────────────────────────────
+    # GOLDEN  (3+ first, overflow 3+, then anything)
+    # ────────────────────────────────────────────
+    elif batch_type == "golden":
+        premium_idx = (df_work[df_work["_m"] >= 3]
+                       .sort_values("_m", ascending=False).index.tolist())
+
+        # Pass 1 — 3+ by country
+        fill_groups(premium_idx)
+
+        # Overflow — unused 3+ from other groups
+        overflow_fill(premium_idx)
+
+        # Pass 2 — if still short, use anything remaining
+        total_selected_so_far = sum(len(s) for s in group_selections)
+        if total_selected_so_far < total_quota:
+            any_remaining = [i for i in df_work.index if i not in used]
+            # sort 3+ first, then <3
+            any_remaining.sort(key=lambda i: -df_work.loc[i, "_m"])
+            under3_used = False
+            still_needed_global = total_quota - total_selected_so_far
+            overflow_taken = any_remaining[:still_needed_global]
+            for idx_val in overflow_taken:
+                if df_work.loc[idx_val, "_m"] < 3:
+                    under3_used = True
+                for gi, group in enumerate(groups):
+                    if len(group_selections[gi]) < group["quota"]:
+                        group_selections[gi].append(idx_val)
+                        used.add(idx_val)
+                        break
+                else:
+                    group_selections[0].append(idx_val)
+                    used.add(idx_val)
+            if under3_used:
+                warnings.append(
+                    "⚠️ **Golden Batch:** Cases with < 3 machines were included to complete "
+                    "the total quota because not enough 3+ machine cases were available."
+                )
+
+    # ────────────────────────────────────────────
+    # TRADITIONAL  (50% 3+, then 50% <3, then overflow)
+    # ────────────────────────────────────────────
+    elif batch_type == "traditional":
+        premium_target = total_quota // 2
+        premium_idx = (df_work[df_work["_m"] >= 3]
+                       .sort_values("_m", ascending=False).index.tolist())
+        under3_idx  = df_work[df_work["_m"] < 3].index.tolist()
+
+        # Pass 1 — 3+ cases, globally capped at premium_target
+        premium_selected = 0
+        for gi, group in enumerate(groups):
+            if premium_selected >= premium_target:
+                break
+            pool = country_pool(premium_idx, group)
+            can_take = min(len(pool), group["quota"], premium_target - premium_selected)
+            take = pool[:can_take]
+            group_selections[gi].extend(take)
+            used.update(take)
+            premium_selected += len(take)
+
+        # Pass 2 — <3 cases, fill remaining per-group quota
+        fill_groups(under3_idx)
+
+        # Pass 3 — overflow: any unused cases for remaining shortfalls
+        all_idx = list(df_work.index)
+        overflow_fill(all_idx)
+
+    # ────────────────────────────────────────────
+    # Build group reports + overflow warnings
+    # ────────────────────────────────────────────
+    group_reports = []
+    for gi, group in enumerate(groups):
+        filled   = len(group_selections[gi])
+        shortfall = group["quota"] - filled
+        # Detect overflow: cases in this group not from its own country pool
+        own_countries = group["countries"]
+        overflow_cases = [
+            i for i in group_selections[gi]
+            if not case_matches_group(df_work.loc[i, country_col], own_countries)
+        ]
+        overflow_note = f"{len(overflow_cases)} overflow case(s) from other groups" if overflow_cases else ""
+        group_reports.append({
+            "group":    group["name"],
+            "quota":    group["quota"],
+            "filled":   filled,
+            "shortfall": max(shortfall, 0),
+            "overflow_note": overflow_note,
+        })
+        if overflow_cases:
+            warnings.append(
+                f"⚠️ Group **{group['name']}**: {len(overflow_cases)} case(s) were filled "
+                f"with overflow from other country groups to meet the quota."
+            )
+
+    # Total quota warning
+    total_selected = sum(len(s) for s in group_selections)
+    if total_selected < total_quota:
+        warnings.append(
+            f"🚨 **Total batch quota not met:** {total_selected} of {total_quota} cases selected. "
+            f"Not enough cases available in the uploaded file to complete the full batch."
+        )
+
+    # ── Build output DataFrame ──
     all_selected_idx = sorted(set(idx for sel in group_selections for idx in sel))
-    drop_cols = [c for c in ["_m", "_p"] if c in df_work.columns]
-    selected_df = df_work.loc[all_selected_idx].drop(columns=drop_cols).reset_index(drop=True)
+    drop_cols = [c for c in ["_m"] if c in df_work.columns]
+    selected_df = (df_work.loc[all_selected_idx]
+                   .drop(columns=drop_cols)
+                   .reset_index(drop=True))
 
+    # Backlog
     backlog_df = df_work[~df_work.index.isin(all_selected_idx)].copy()
-    backlog_rows = []
+    backlog_summary = {}
     for _, row in backlog_df.iterrows():
         cv = str(row.get(country_col, "Unknown")).strip()
-        countries_in_row = [c.strip() for c in re.split(r"[,|;\s/]+", cv) if c.strip()] or ["Unknown"]
-        machines = row.get("_m", 0)
-        for c in countries_in_row:
-            backlog_rows.append({"Country": c, "machines": float(machines)})
-
-    backlog_summary = {}
-    for br in backlog_rows:
-        c = br["Country"]
-        if c not in backlog_summary:
-            backlog_summary[c] = {"total": 0, "priority": 0, "standard": 0}
-        backlog_summary[c]["total"] += 1
-        if br["machines"] >= 3:
-            backlog_summary[c]["priority"] += 1
-        else:
-            backlog_summary[c]["standard"] += 1
+        ctries = [c.strip() for c in re.split(r"[,|;\s/]+", cv) if c.strip()] or ["Unknown"]
+        m = float(row.get("_m", 0))
+        for c in ctries:
+            if c not in backlog_summary:
+                backlog_summary[c] = {"total": 0, "priority": 0, "standard": 0}
+            backlog_summary[c]["total"] += 1
+            if m >= 3: backlog_summary[c]["priority"] += 1
+            else:       backlog_summary[c]["standard"] += 1
 
     backlog_table = pd.DataFrame([
         {"Country": c, "Total Backlog": v["total"],
-         "3+ Machines (Priority)": v["priority"], "< 3 Machines": v["standard"]}
+         "3+ Machines": v["priority"], "< 3 Machines": v["standard"]}
         for c, v in sorted(backlog_summary.items(), key=lambda x: -x[1]["total"])
     ])
 
     report = {
-        "groups": group_reports, "total_selected": len(selected_df),
-        "total_backlog": len(backlog_df), "backlog_table": backlog_table,
-        "profile_name": distribution["name"],
+        "groups": group_reports, "total_selected": total_selected,
+        "total_quota": total_quota, "total_backlog": len(backlog_df),
+        "backlog_table": backlog_table, "profile_name": distribution["name"],
+        "batch_type": batch_type,
     }
     return selected_df, report, warnings
 
@@ -985,12 +1089,26 @@ if enable_batch:
 
     ep = st.session_state.editor_profile
 
-    priority_on = st.toggle(
-        "Prioritize cases with 3+ Total Machines", value=True, key="priority_toggle",
+    BATCH_TYPE_OPTIONS = {
+        "standard":    "📊 Batch Standard — Fill by country availability (no machine filter)",
+        "low":         "🔵 Batch Low — Cases with < 3 machines only",
+        "traditional": "🟡 Batch Traditional — 50% cases with 3+ machines, rest with 1–2 machines",
+        "golden":      "🟠 Batch Golden — 100% cases with 3+ machines (overflow with anything if needed)",
+    }
+
+    batch_type = st.radio(
+        "Batch Type",
+        options=list(BATCH_TYPE_OPTIONS.keys()),
+        format_func=lambda k: BATCH_TYPE_OPTIONS[k],
+        index=0,
+        key="batch_type_radio",
         help=(
-            "ON — Within each group, cases with Total Machines ≥ 3 from the Pleteo export "
-            "fill the quota first; remaining slots are filled with <3 machine cases. "
-            "OFF — Fill each group's quota purely by country availability, no machine count ordering."
+            "**Standard** — Default. Fill by country quota, no machine filtering.\n\n"
+            "**Low** — Only selects cases with < 3 Total Machines.\n\n"
+            "**Traditional** — First fills 50% of the total quota with 3+ machine cases "
+            "(by country), then completes with 1–2 machine cases.\n\n"
+            "**Golden** — Selects only 3+ machine cases. Falls back to any available cases "
+            "only if the quota cannot be met with 3+ cases alone (warning shown)."
         ),
     )
 
@@ -1079,7 +1197,7 @@ if enable_batch:
                     st.error(f"Import failed: {e}")
 else:
     ep = None
-    priority_on = False
+    batch_type = "standard"
 
 
 # ──────────────────────────────────────────────
@@ -1201,7 +1319,7 @@ if all_uploaded:
                         profile_clean = {k: v for k, v in ep.items() if not k.startswith("_")}
                         try:
                             batch_df, report, dist_warnings = apply_batch_distribution(
-                                result_df, profile_clean, region_code, priority_machines=priority_on
+                                result_df, profile_clean, region_code, batch_type=batch_type
                             )
                             st.session_state.batch_result_df = batch_df
                             st.session_state.batch_report = report
@@ -1413,21 +1531,26 @@ if st.session_state.result_df is not None:
         warnings_list = st.session_state.batch_warnings
 
         st.markdown("---")
-        st.subheader(f"📦 Distribution Results — {report['profile_name']}")
+        BATCH_LABELS = {
+            "standard": "📊 Batch Standard", "low": "🔵 Batch Low",
+            "traditional": "🟡 Batch Traditional", "golden": "🟠 Batch Golden",
+        }
+        batch_label = BATCH_LABELS.get(report.get("batch_type", "standard"), "Batch")
+        st.subheader(f"📦 Distribution Results — {report['profile_name']} · {batch_label}")
         for w in warnings_list: st.warning(w)
 
         gr_cols = st.columns(len(report["groups"]))
         for col, grp in zip(gr_cols, report["groups"]):
-            overflow_note = (f" (+{grp['filled'] - (grp['quota'] - grp['shortfall'])} overflow)"
-                             if grp["overflow_from"] else "")
+            overflow_note = f" (+overflow)" if grp.get("overflow_note") else ""
             delta_val = "On target" if grp["shortfall"] == 0 else f"-{grp['shortfall']} short"
             col.metric(label=grp["group"], value=f"{grp['filled']} / {grp['quota']}",
                        delta=f"{delta_val}{overflow_note}",
                        delta_color="normal" if grp["shortfall"] == 0 else "inverse")
 
-        t1, t2 = st.columns(2)
-        t1.metric("Total Selected for Batch", report["total_selected"])
-        t2.metric("Total Backlog (not selected)", report["total_backlog"])
+        t1, t2, t3 = st.columns(3)
+        t1.metric("Total Selected", report["total_selected"])
+        t2.metric("Total Quota",    report["total_quota"])
+        t3.metric("Backlog",        report["total_backlog"])
 
         st.subheader("Distributed Batch Preview")
         st.dataframe(batch_df, use_container_width=True, height=350)
