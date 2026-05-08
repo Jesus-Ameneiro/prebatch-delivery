@@ -226,6 +226,12 @@ DEFAULT_CS_DIST = {
 }
 
 HISTORY_FILE = "batch_history.json"
+BATCH_LABELS = {
+    "standard":    "📊 Batch Standard",
+    "low":         "🔵 Batch Low",
+    "traditional": "🟡 Batch Traditional",
+    "golden":      "🟠 Batch Golden",
+}
 
 
 # ──────────────────────────────────────────────
@@ -370,7 +376,11 @@ def diagnose_github() -> list:
 # ──────────────────────────────────────────────
 def _init_state():
     defaults = {
-        "result_df": None,
+        "result_df": None,          # final output (post-distribution if enabled)
+        "raw_df": None,             # full merge before distribution (reference only)
+        "dist_report": None,        # distribution stats (shown in results if applied)
+        "dist_warnings": [],        # distribution warnings
+        "dist_applied": False,      # whether distribution was applied
         "unmatched": [], "grouped": [], "duplicates": [],
         "region_processed": None,
         "generation_log": [],
@@ -380,7 +390,7 @@ def _init_state():
             "CS":  [copy.deepcopy(DEFAULT_CS_DIST)],
         },
         "dist_defaults": {"MCC": "Standard MCC", "CS": "Standard CS"},
-        "batch_result_df": None, "batch_report": None, "batch_warnings": [],
+        "prebatch_ready_to_confirm": False,
         "editor_profile": None,
         # Delivery history (persistent via GitHub)
         "delivery_history": {"MCC": [], "CS": []},
@@ -392,8 +402,6 @@ def _init_state():
         "batch_validated": False,
         "validation_warnings": [],
         "validation_clean": False,
-        # Confirm delivery state
-        "prebatch_ready_to_confirm": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -1299,7 +1307,11 @@ if enable_batch:
                 except Exception as e:
                     st.error(f"Import failed: {e}")
 else:
-    ep = None
+    # Toggle OFF — load default profile silently, apply Standard type
+    _default_name = st.session_state.dist_defaults.get(region_code)
+    ep = copy.deepcopy(get_profile(region_code, _default_name)) if _default_name else None
+    if ep:
+        ep["_editing_name"] = _default_name
     batch_type = "standard"
 
 
@@ -1404,39 +1416,46 @@ if all_uploaded:
                      disabled=generate_disabled, help=generate_help):
             with st.spinner("Processing files..."):
                 try:
-                    result_df, unmatched, grouped, duplicates = process_data(
+                    raw_df, unmatched, grouped, duplicates = process_data(
                         qs_df_v, pl_df_v, cc_df_v, region_code
                     )
-                    st.session_state.result_df = result_df
-                    st.session_state.unmatched = unmatched
-                    st.session_state.grouped = grouped
-                    st.session_state.duplicates = duplicates
+                    st.session_state.raw_df        = raw_df
+                    st.session_state.unmatched     = unmatched
+                    st.session_state.grouped       = grouped
+                    st.session_state.duplicates    = duplicates
                     st.session_state.region_processed = region_code
-                    st.session_state.batch_result_df = None
-                    st.session_state.batch_report = None
-                    st.session_state.batch_warnings = []
+                    st.session_state.dist_report   = None
+                    st.session_state.dist_warnings = []
+                    st.session_state.dist_applied  = False
                     st.session_state.prebatch_ready_to_confirm = True
 
-                    # Auto-apply distribution if enabled
-                    if enable_batch and ep is not None:
+                    # Always apply distribution — toggle controls type/profile choice only
+                    # Toggle OFF = Standard type with default profile
+                    if ep is not None:
                         profile_clean = {k: v for k, v in ep.items() if not k.startswith("_")}
                         try:
-                            batch_df, report, dist_warnings = apply_batch_distribution(
-                                result_df, profile_clean, region_code, batch_type=batch_type
+                            final_df, report, dw = apply_batch_distribution(
+                                raw_df, profile_clean, region_code, batch_type=batch_type
                             )
-                            st.session_state.batch_result_df = batch_df
-                            st.session_state.batch_report = report
-                            st.session_state.batch_warnings = dist_warnings
+                            st.session_state.result_df     = final_df
+                            st.session_state.dist_report   = report
+                            st.session_state.dist_warnings = dw
+                            st.session_state.dist_applied  = True
                         except Exception as dist_err:
-                            st.warning(f"Distribution could not be applied automatically: {dist_err}")
+                            st.warning(f"Distribution could not be applied: {dist_err}. Using full merge.")
+                            st.session_state.result_df = raw_df
+                    else:
+                        st.session_state.result_df = raw_df
 
+                    # Log entry — always records the final output cases
+                    final = st.session_state.result_df
                     st.session_state.generation_log.append({
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "region": region_code, "total": len(result_df),
+                        "region": region_code, "total": len(final),
                         "grouped": len(grouped), "unmatched": len(unmatched),
                         "duplicates": len(duplicates), "confirmed": False,
                         "batch_number": None, "delivery_date": None,
-                        "cases": [(r["Case ID"], r.get("Entity Name","")) for _, r in result_df.iterrows()],
+                        "cases": [(r["Case ID"], r.get("Entity Name","")) for _, r in final.iterrows()],
                     })
                 except Exception as e:
                     st.error(f"Error processing files: {str(e)}")
@@ -1470,15 +1489,50 @@ else:
 # ──────────────────────────────────────────────
 if st.session_state.result_df is not None:
     result_df = st.session_state.result_df
-    rp = st.session_state.region_processed
+    raw_df    = st.session_state.raw_df or result_df
+    rp        = st.session_state.region_processed
+    dist_applied  = st.session_state.dist_applied
+    dist_report   = st.session_state.dist_report
+    dist_warnings = st.session_state.dist_warnings
 
     st.divider()
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Total Cases",        len(result_df))
-    m2.metric("Grouped Entities",   len(st.session_state.grouped))
-    m3.metric("Unmatched",          len(st.session_state.unmatched))
-    m4.metric("Duplicates Removed", len(st.session_state.duplicates))
 
+    # ── Top metrics ──
+    if dist_applied and dist_report:
+        batch_label = BATCH_LABELS.get(dist_report.get("batch_type", "standard"), "Batch")
+        is_custom = enable_batch
+        st.markdown(
+            f"**Prebatch — {dist_report['profile_name']} · {batch_label}** "
+            f"&nbsp;·&nbsp; {len(result_df)} of {len(raw_df)} cases selected"
+        )
+        for w in dist_warnings:
+            st.warning(w)
+
+        if is_custom:
+            gr_cols = st.columns(len(dist_report["groups"]))
+            for col, grp in zip(gr_cols, dist_report["groups"]):
+                overflow_note = " (+overflow)" if grp.get("overflow_note") else ""
+                delta_val = "On target" if grp["shortfall"] == 0 else f"-{grp['shortfall']} short"
+                col.metric(
+                    label=grp["group"],
+                    value=f"{grp['filled']} / {grp['quota']}",
+                    delta=f"{delta_val}{overflow_note}",
+                    delta_color="normal" if grp["shortfall"] == 0 else "inverse",
+                )
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Cases in Prebatch",  len(result_df))
+        m2.metric("Total Available",    len(raw_df))
+        m3.metric("Backlog",            dist_report.get("total_backlog", 0))
+        m4.metric("Duplicates Removed", len(st.session_state.duplicates))
+    else:
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Cases",        len(result_df))
+        m2.metric("Grouped Entities",   len(st.session_state.grouped))
+        m3.metric("Unmatched",          len(st.session_state.unmatched))
+        m4.metric("Duplicates Removed", len(st.session_state.duplicates))
+
+    # ── Diagnostics ──
     dcols = st.columns(3)
     with dcols[0]:
         if st.session_state.unmatched:
@@ -1496,11 +1550,34 @@ if st.session_state.result_df is not None:
                 st.caption("First occurrence kept.")
                 for c in st.session_state.duplicates: st.code(c)
 
-    st.subheader("Output Preview")
+    # ── Full merge reference (only shown when distribution was applied) ──
+    if dist_applied and raw_df is not None and len(raw_df) != len(result_df):
+        with st.expander(f"📋 Full merge reference ({len(raw_df)} cases before distribution)", expanded=False):
+            st.caption("All cases from the file merge, before distribution filtering was applied.")
+            st.dataframe(raw_df, use_container_width=True, height=300)
+
+    # ── Backlog report (only when distribution applied) ──
+    if dist_applied and dist_report and not dist_report["backlog_table"].empty:
+        with st.expander("📋 Backlog Report — cases not included in this Prebatch", expanded=False):
+            st.caption("Available for the next batch delivery, broken down by country.")
+            st.dataframe(dist_report["backlog_table"], use_container_width=True,
+                         hide_index=True,
+                         height=min(35 * len(dist_report["backlog_table"]) + 40, 380))
+            st.download_button(
+                "⬇ Download Backlog Report",
+                data=to_excel(dist_report["backlog_table"], sheet_name="Backlog"),
+                file_name=f"Backlog_{rp}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_backlog",
+            )
+
+    # ── Prebatch preview + download ──
+    st.subheader("Prebatch Preview")
     st.dataframe(result_df, use_container_width=True, height=380)
     st.download_button(
-        label=f"⬇ Download Full Prebatch_{rp}.xlsx",
-        data=to_excel(result_df), file_name=f"Prebatch_{rp}.xlsx",
+        label=f"⬇ Download Prebatch_{rp}.xlsx",
+        data=to_excel(result_df),
+        file_name=f"Prebatch_{rp}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         type="primary", use_container_width=True,
     )
@@ -1513,7 +1590,7 @@ if st.session_state.result_df is not None:
         st.markdown("""
         <div class="confirm-section">
             <h3>✅ Confirm Batch Delivery</h3>
-            <p>Complete the delivery details below and confirm to register this batch permanently in the delivery history.</p>
+            <p>Complete the delivery details below and confirm to register this Prebatch permanently in the delivery history.</p>
         </div>
         """, unsafe_allow_html=True)
         st.markdown("")
@@ -1522,169 +1599,84 @@ if st.session_state.result_df is not None:
         cf1, cf2 = st.columns(2)
         with cf1:
             delivery_date = st.date_input(
-                "Delivery Date", value=datetime.today(),
-                key="confirm_date",
-                help="The date this batch is being delivered.",
+                "Delivery Date", value=datetime.today(), key="confirm_date",
             )
         with cf2:
             batch_number = st.number_input(
-                "Batch Number",
-                min_value=1, value=suggested_batch, step=1,
+                "Batch Number", min_value=1, value=suggested_batch, step=1,
                 key="confirm_batch_num",
-                help=f"Sequential batch number. Suggested: {suggested_batch} (last confirmed + 1).",
+                help=f"Suggested: {suggested_batch} (last confirmed + 1 for {rp})",
             )
 
-        # Check if this batch number already exists for this region
         existing_nums = [b.get("batch_number") for b in
                          st.session_state.delivery_history.get(rp, [])]
         if int(batch_number) in existing_nums:
             st.warning(f"⚠️ Batch **#{int(batch_number)}** already exists for {rp}. "
-                       "Using a duplicate number will overwrite the historical entry.")
+                       "Confirming will overwrite that entry.")
 
-        # Determine which cases to confirm: batch result if applied, else full prebatch
-        if st.session_state.batch_result_df is not None:
-            confirm_df = st.session_state.batch_result_df
-            profile_name = st.session_state.batch_report.get("profile_name", "—") if st.session_state.batch_report else "—"
+        if dist_applied and dist_report:
+            profile_name = dist_report.get("profile_name", "—")
+            batch_label  = BATCH_LABELS.get(dist_report.get("batch_type","standard"), "Batch")
+            confirm_label = f"{profile_name} · {batch_label}"
         else:
-            confirm_df = result_df
-            profile_name = "Full Prebatch (no distribution applied)"
+            confirm_label = "Full Prebatch (no distribution applied)"
 
         st.caption(
-            f"Cases to be confirmed: **{len(confirm_df)}** · "
-            f"Profile: **{profile_name}** · "
-            f"Region: **{rp}**"
+            f"**{len(result_df)} cases** will be confirmed · "
+            f"Profile: **{confirm_label}** · Region: **{rp}**"
         )
 
-        if st.button("✅ Confirm Batch Delivery", type="primary", use_container_width=True,
-                     key="confirm_delivery_btn"):
+        if st.button("✅ Confirm Batch Delivery", type="primary",
+                     use_container_width=True, key="confirm_delivery_btn"):
             batch_entry = {
                 "batch_number": int(batch_number),
                 "delivery_date": delivery_date.strftime("%Y-%m-%d"),
-                "region": rp,
-                "profile": profile_name,
-                "total_cases": len(confirm_df),
-                "cases": [
-                    [row["Case ID"], row.get("Entity Name", "")]
-                    for _, row in confirm_df.iterrows()
-                ],
+                "region": rp, "profile": confirm_label,
+                "total_cases": len(result_df),
+                "cases": [[row["Case ID"], row.get("Entity Name", "")]
+                           for _, row in result_df.iterrows()],
             }
-
-            # Update in-memory history
             region_batches = st.session_state.delivery_history.setdefault(rp, [])
-            # Replace if same batch number exists, else append
             replaced = False
             for i, b in enumerate(region_batches):
                 if b.get("batch_number") == int(batch_number):
-                    region_batches[i] = batch_entry
-                    replaced = True
-                    break
+                    region_batches[i] = batch_entry; replaced = True; break
             if not replaced:
                 region_batches.append(batch_entry)
-
-            # Sort by batch number
             st.session_state.delivery_history[rp] = sorted(
                 region_batches, key=lambda b: b.get("batch_number", 0)
             )
-
-            # Push to GitHub
             with st.spinner("Saving batch history to GitHub..."):
                 ok, err, new_sha = save_history_to_github(
                     st.session_state.delivery_history, st.session_state.history_sha
                 )
-
             if ok:
                 st.session_state.history_sha = new_sha
                 st.session_state.prebatch_ready_to_confirm = False
-                # Mark session log entry as confirmed
                 if st.session_state.generation_log:
                     last = st.session_state.generation_log[-1]
-                    last["confirmed"] = True
-                    last["batch_number"] = int(batch_number)
-                    last["delivery_date"] = delivery_date.strftime("%Y-%m-%d")
+                    last.update({"confirmed": True, "batch_number": int(batch_number),
+                                 "delivery_date": delivery_date.strftime("%Y-%m-%d")})
                 st.success(
                     f"🎉 Batch **#{int(batch_number)}** for **{rp}** confirmed and saved! "
-                    f"Delivery date: **{delivery_date.strftime('%Y-%m-%d')}** · "
-                    f"**{len(confirm_df)}** cases registered."
+                    f"**{len(result_df)}** cases registered on **{delivery_date.strftime('%Y-%m-%d')}**."
                 )
                 st.rerun()
             else:
                 st.error(f"❌ Failed to save to GitHub: {err}")
-                st.info("The batch was added to the in-memory history for this session, "
-                        "but could not be persisted. Check your GitHub secrets and retry.")
+                st.info("Batch added to in-memory history but not persisted. "
+                        "Check your GitHub secrets and retry.")
                 with st.expander("🔧 Run GitHub Diagnostics", expanded=True):
-                    _diag = diagnose_github()
-                    for label, ok, detail in _diag:
-                        icon = "✅" if ok else "❌"
-                        st.markdown(f"{icon} **{label}** — {detail}")
+                    for label, ok_check, detail in diagnose_github():
+                        st.markdown(f"{'✅' if ok_check else '❌'} **{label}** — {detail}")
                     st.markdown("---")
                     st.markdown(
                         "**Common fixes:**\n"
-                        "- `GITHUB_REPO` must be `owner/repo-name` exactly as it appears in the URL\n"
-                        "- `GITHUB_BRANCH` must match your repo's default branch (`main` or `master`)\n"
-                        "- `GITHUB_TOKEN` must have the `repo` scope and not be expired\n"
-                        "- Update secrets in **Streamlit Cloud → App Settings → Secrets**, then reboot the app"
+                        "- `GITHUB_REPO` must be `owner/repo-name`\n"
+                        "- `GITHUB_BRANCH` must match your default branch\n"
+                        "- `GITHUB_TOKEN` must have `repo` scope\n"
+                        "- Update secrets in Streamlit Cloud → App Settings → Secrets, then reboot"
                     )
-
-    # ════════════════════════════════════════════
-    # DISTRIBUTION RESULTS (if applied)
-    # ════════════════════════════════════════════
-    if st.session_state.batch_result_df is not None:
-        batch_df      = st.session_state.batch_result_df
-        report        = st.session_state.batch_report
-        warnings_list = st.session_state.batch_warnings
-
-        st.markdown("---")
-        BATCH_LABELS = {
-            "standard": "📊 Batch Standard", "low": "🔵 Batch Low",
-            "traditional": "🟡 Batch Traditional", "golden": "🟠 Batch Golden",
-        }
-        batch_label = BATCH_LABELS.get(report.get("batch_type", "standard"), "Batch")
-        st.subheader(f"📦 Distribution Results — {report['profile_name']} · {batch_label}")
-        for w in warnings_list: st.warning(w)
-
-        gr_cols = st.columns(len(report["groups"]))
-        for col, grp in zip(gr_cols, report["groups"]):
-            overflow_note = f" (+overflow)" if grp.get("overflow_note") else ""
-            delta_val = "On target" if grp["shortfall"] == 0 else f"-{grp['shortfall']} short"
-            col.metric(label=grp["group"], value=f"{grp['filled']} / {grp['quota']}",
-                       delta=f"{delta_val}{overflow_note}",
-                       delta_color="normal" if grp["shortfall"] == 0 else "inverse")
-
-        t1, t2, t3 = st.columns(3)
-        t1.metric("Total Selected", report["total_selected"])
-        t2.metric("Total Quota",    report["total_quota"])
-        t3.metric("Backlog",        report["total_backlog"])
-
-        st.subheader("Distributed Batch Preview")
-        st.dataframe(batch_df, use_container_width=True, height=350)
-        st.download_button(
-            label=f"⬇ Download Batch_{rp}_{report['profile_name'].replace(' ','_')}.xlsx",
-            data=to_excel(batch_df, sheet_name="Batch"),
-            file_name=f"Batch_{rp}_{report['profile_name'].replace(' ','_')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary", use_container_width=True, key="dl_batch",
-        )
-
-        if not report["backlog_table"].empty:
-            st.markdown("")
-            st.markdown("""
-            <div class="backlog-card">
-                <strong style="color:#F47920;">📋 Backlog Report — Available for Next Batch</strong><br>
-                <span style="font-size:0.85rem;color:#4A4A4A;">
-                Cases remaining after this batch distribution, broken down by country.
-                </span>
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown("")
-            st.dataframe(report["backlog_table"], use_container_width=True, hide_index=True,
-                         height=min(35 * len(report["backlog_table"]) + 40, 400))
-            st.download_button(
-                "⬇ Download Backlog Report",
-                data=to_excel(report["backlog_table"], sheet_name="Backlog"),
-                file_name=f"Backlog_{rp}_{report['profile_name'].replace(' ','_')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_backlog",
-            )
 
 
 # ──────────────────────────────────────────────
