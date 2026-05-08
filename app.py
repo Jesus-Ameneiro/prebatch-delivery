@@ -1489,7 +1489,7 @@ else:
 # ──────────────────────────────────────────────
 if st.session_state.result_df is not None:
     result_df = st.session_state.result_df
-    raw_df    = st.session_state.raw_df or result_df
+    raw_df    = st.session_state.raw_df if st.session_state.raw_df is not None else result_df
     rp        = st.session_state.region_processed
     dist_applied  = st.session_state.dist_applied
     dist_report   = st.session_state.dist_report
