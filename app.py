@@ -1610,9 +1610,21 @@ if st.session_state.result_df is not None:
 
         existing_nums = [b.get("batch_number") for b in
                          st.session_state.delivery_history.get(rp, [])]
-        if int(batch_number) in existing_nums:
-            st.warning(f"⚠️ Batch **#{int(batch_number)}** already exists for {rp}. "
-                       "Confirming will overwrite that entry.")
+        is_duplicate = int(batch_number) in existing_nums
+
+        if is_duplicate:
+            st.warning(
+                f"⚠️ Batch **#{int(batch_number)}** already exists for **{rp}**. "
+                "Confirming will **replace** the existing entry. "
+                "Tick the checkbox below to proceed."
+            )
+            overwrite_confirmed = st.checkbox(
+                f"Yes, I want to replace Batch #{int(batch_number)} for {rp}",
+                value=False,
+                key="overwrite_confirm_checkbox",
+            )
+        else:
+            overwrite_confirmed = True
 
         if dist_applied and dist_report:
             profile_name = dist_report.get("profile_name", "—")
@@ -1627,7 +1639,8 @@ if st.session_state.result_df is not None:
         )
 
         if st.button("✅ Confirm Batch Delivery", type="primary",
-                     use_container_width=True, key="confirm_delivery_btn"):
+                     use_container_width=True, key="confirm_delivery_btn",
+                     disabled=is_duplicate and not overwrite_confirmed):
             batch_entry = {
                 "batch_number": int(batch_number),
                 "delivery_date": delivery_date.strftime("%Y-%m-%d"),
