@@ -646,14 +646,21 @@ st.divider()
 st.subheader("Upload Source Files")
 col1, col2, col3 = st.columns(3)
 with col1:
-    qs_file = st.file_uploader("QS Delivery ID File", type=["csv","xlsx","xls"],
-        help="Contains grouped Case IDs, entity names, aggregated machine counts, and event dates.")
+    qs_files = st.file_uploader(
+        "QS Delivery ID File",
+        type=["csv","xlsx","xls"],
+        accept_multiple_files=True,
+        help="Upload one or more QS Delivery ID files. Multiple files are merged into one before processing.",
+    )
 with col2:
     pl_file = st.file_uploader("PL Batch File (Pleteo Export)", type=["csv","xlsx","xls"],
         help="CRM export providing the 'Updated' timestamp for Last Updated At (MCC).")
 with col3:
     pc_file = st.file_uploader("Conflict Check File", type=["csv","xlsx","xls"],
         help="Investigation data: machine overviews, notes, entity details, and case attribution.")
+
+if qs_files and len(qs_files) > 1:
+    st.info(f"📎 **{len(qs_files)} QS files uploaded** — they will be merged into one before processing.")
 
 
 # ──────────────────────────────────────────────
@@ -666,6 +673,16 @@ def read_file(f):
     return (pd.read_csv(f, dtype=str, keep_default_na=False)
             if name.endswith(".csv")
             else pd.read_excel(f, dtype=str, keep_default_na=False))
+
+def merge_qs_files(uploaded_files):
+    """Read and vertically concatenate one or more QS files into a single DataFrame."""
+    frames = []
+    for f in uploaded_files:
+        frames.append(read_file(f))
+    if not frames:
+        return pd.DataFrame()
+    merged = pd.concat(frames, ignore_index=True)
+    return merged
 
 def clean_df(df):
     df.columns = [str(c).strip() for c in df.columns]
@@ -1365,14 +1382,30 @@ with st.expander("🔗 Delivery ID Search String Generator", expanded=False):
 # Processing Area
 # ──────────────────────────────────────────────
 st.divider()
-all_uploaded = bool(qs_file and pl_file and pc_file)
+all_uploaded = bool(qs_files and pl_file and pc_file)
 qs_df_v = pl_df_v = cc_df_v = None
 all_valid = False
 
-if any([qs_file, pl_file, pc_file]):
+if any([qs_files, pl_file, pc_file]):
     with st.expander("File Validation", expanded=True):
         vc1, vc2, vc3 = st.columns(3)
-        with vc1: qs_df_v, qs_ok = show_validation(qs_file, QS_REQUIRED, "QS Delivery ID")
+        with vc1:
+            if qs_files:
+                try:
+                    merged_qs = clean_df(merge_qs_files(qs_files))
+                    ok, missing = validate_file(merged_qs, QS_REQUIRED)
+                    label = f"QS Delivery ID ({len(qs_files)} file{'s' if len(qs_files) > 1 else ''})"
+                    if ok:
+                        st.markdown(f'<span class="val-ok">✔ {label}</span> — {len(merged_qs)} rows, {len(merged_qs.columns)} columns', unsafe_allow_html=True)
+                        qs_df_v, qs_ok = merged_qs, True
+                    else:
+                        st.markdown(f'<span class="val-err">✘ {label}</span> — missing: `{"`, `".join(sorted(missing))}`', unsafe_allow_html=True)
+                        qs_df_v, qs_ok = None, False
+                except Exception as e:
+                    st.markdown(f'<span class="val-err">✘ QS Delivery ID</span> — could not read file(s): {e}', unsafe_allow_html=True)
+                    qs_df_v, qs_ok = None, False
+            else:
+                qs_ok = False
         with vc2: pl_df_v, pl_ok = show_validation(pl_file, PL_REQUIRED, "PL Batch")
         with vc3: cc_df_v, cc_ok = show_validation(pc_file, CC_REQUIRED, "Conflict Check")
     all_valid = all_uploaded and qs_ok and pl_ok and cc_ok
@@ -1388,9 +1421,8 @@ if all_uploaded:
     with btn_col1:
         if st.button("🔍 Validate Batch", use_container_width=True, disabled=not all_valid,
                      help="Check Case IDs against previously confirmed deliveries."):
-            # Extract Case IDs from QS file to validate
             try:
-                qs_temp = clean_df(read_file(qs_file))
+                qs_temp = clean_df(merge_qs_files(qs_files))
                 case_ids_to_validate = [
                     str(v).strip() for v in qs_temp.get("Case ID", qs_temp.iloc[:, 0])
                     if str(v).strip() and str(v).strip().lower() != "nan"
@@ -1480,7 +1512,7 @@ if all_uploaded:
                     st.markdown(f"- {w}")
 
 else:
-    missing = [n for f, n in [(qs_file,"QS Delivery ID"),(pl_file,"PL Batch"),(pc_file,"Conflict Check")] if not f]
+    missing = [n for f, n in [(qs_files,"QS Delivery ID"),(pl_file,"PL Batch"),(pc_file,"Conflict Check")] if not f]
     st.info(f"Upload the remaining file(s) to proceed: **{', '.join(missing)}**")
 
 
