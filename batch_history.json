@@ -839,5 +839,431 @@
       ]
     }
   ],
-  "CS": []
+  "CS": [
+    {
+      "batch_number": 49,
+      "delivery_date": "2026-05-12",
+      "region": "CS",
+      "profile": "Standard CS · 🟡 Batch Traditional",
+      "total_cases": 104,
+      "cases": [
+        [
+          "3051904#1",
+          "Input Design"
+        ],
+        [
+          "4315213#1",
+          "Ingeade SAS"
+        ],
+        [
+          "4381680#1",
+          "Ambito S.R.L."
+        ],
+        [
+          "4302524#1",
+          "Multiservicios e Inversiones Inmobitec SAC"
+        ],
+        [
+          "4184802#1",
+          "Municipalidad Distrital de Pocollay"
+        ],
+        [
+          "1068258#1",
+          "NewSide Infraestructura SAC"
+        ],
+        [
+          "3528712#1",
+          "Grupo Toratto"
+        ],
+        [
+          "1915762#1",
+          "AMBROSINI + PESAQUE"
+        ],
+        [
+          "1002347#1",
+          "J-Gaviria Arquitectos"
+        ],
+        [
+          "1376517#1",
+          "REYCH - Constructora y Consultora"
+        ],
+        [
+          "607756#1",
+          "Constructora Viento Sur Limitada"
+        ],
+        [
+          "593497#1",
+          "UP Inmobiliario"
+        ],
+        [
+          "4375024#1",
+          "Ancora Technology Partner"
+        ],
+        [
+          "4344638#1",
+          "Sociedad de Desarrollo Tecnológico"
+        ],
+        [
+          "1194094#1",
+          "Civita Arquitectos Ltda."
+        ],
+        [
+          "683628#2",
+          "JMS Ingenieros Consultores Limitada"
+        ],
+        [
+          "4337378#1",
+          "Grekad Met Ltda."
+        ],
+        [
+          "2025942#1",
+          "Energy to Business SPA"
+        ],
+        [
+          "4375513#1",
+          "Soluciones MFM"
+        ],
+        [
+          "1694790#1",
+          "CasaLuker S.A"
+        ],
+        [
+          "1157817#1",
+          "Marketing Personal SA"
+        ],
+        [
+          "1131254#1,1098212#1,1295103#1",
+          "Arquitec Group"
+        ],
+        [
+          "4318483#1",
+          "Centro Comercial Unicentro de Occidente"
+        ],
+        [
+          "4419940#1",
+          "Skin Solutions SAS"
+        ],
+        [
+          "1496313#1",
+          "Diseña tu Mueble"
+        ],
+        [
+          "4405289#1",
+          "Universidad Pontificia Bolivariana"
+        ],
+        [
+          "4327588#1",
+          "Acabados y TechosTransparentes"
+        ],
+        [
+          "1416257#1",
+          "Clima Power Ingeniería"
+        ],
+        [
+          "4418761#1",
+          "Soluciones Empresariales 360° S.A.S"
+        ],
+        [
+          "3684367#2",
+          "The Columbus School"
+        ],
+        [
+          "4366353#1",
+          "Servilogistics Advanced SAS"
+        ],
+        [
+          "2166030#1",
+          "Le. Tengo Estudio Arquitectura"
+        ],
+        [
+          "4318685#1",
+          "Laboratorios Naturcol SA"
+        ],
+        [
+          "4219514#1",
+          "Mold Pet SAS"
+        ],
+        [
+          "4396484#1",
+          "Concrecivil"
+        ],
+        [
+          "4417403#1",
+          "Color Blue"
+        ],
+        [
+          "4431496#1",
+          "Innovabrand"
+        ],
+        [
+          "3127846#1",
+          "SD Opticas"
+        ],
+        [
+          "4421288#1",
+          "Kastor Mobiliario S.A.S"
+        ],
+        [
+          "1003468#1",
+          "Solumec"
+        ],
+        [
+          "1639504#1",
+          "Jardineros LTDA"
+        ],
+        [
+          "3865576#1,2276868#1",
+          "Bragagnini Constructores SAC"
+        ],
+        [
+          "4394106#1,4385941#1",
+          "Corbet Ingenieros S.A.C."
+        ],
+        [
+          "2466522#1",
+          "J&V Resguardo SAC"
+        ],
+        [
+          "684995#2",
+          "Sigral SA"
+        ],
+        [
+          "3048398#1",
+          "Cambrils Inversiones SAC"
+        ],
+        [
+          "3891528#1",
+          "Pinturas Helios SAS"
+        ],
+        [
+          "1128338#1",
+          "Orientoil SA"
+        ],
+        [
+          "2023729#1",
+          "Sonido Naranja SAS"
+        ],
+        [
+          "568832#1",
+          "Volumen Arquitectos SAS"
+        ],
+        [
+          "1004856#1",
+          "Sociedad Anonima Emisora de Televisión y Anexos"
+        ],
+        [
+          "3563963#1",
+          "CONDISER S.R.L."
+        ],
+        [
+          "1463073#1",
+          "Puma Energy"
+        ],
+        [
+          "47508#4",
+          "Aceitera General Deheza SA"
+        ],
+        [
+          "3047489#1,3053083#1",
+          "Anchor Packaging Packall SRL"
+        ],
+        [
+          "1007631#1",
+          "NovaDomus SA"
+        ],
+        [
+          "691796#1",
+          "Chediack"
+        ],
+        [
+          "722742#1",
+          "Klonal SRL"
+        ],
+        [
+          "654052#1",
+          "S+S+S Estudio Saenz Arquitectos"
+        ],
+        [
+          "1005443#1",
+          "MOSAICOS LENZI SA"
+        ],
+        [
+          "758698#1",
+          "Boetto y Buttigliengo SA"
+        ],
+        [
+          "4326565#1",
+          "24HS S.A."
+        ],
+        [
+          "2952620#1,4399167#1",
+          "Atelier Saizieu"
+        ],
+        [
+          "4344357#1",
+          "Constructora Edificar S.A."
+        ],
+        [
+          "1088502#1",
+          "HSD Estudio Pericial"
+        ],
+        [
+          "3250945#1",
+          "IKE ASISTENCIA ARGENTINA S.A."
+        ],
+        [
+          "1546662#1",
+          "Estudio Sinergia"
+        ],
+        [
+          "159200#3",
+          "RACS Computadoras y Servicios"
+        ],
+        [
+          "3511114#1",
+          "Vicente Trapani S.A"
+        ],
+        [
+          "887687#1",
+          "CDSYS SRL"
+        ],
+        [
+          "937794#1",
+          "Visuar S.A"
+        ],
+        [
+          "2334715#1,68940#3",
+          "Grupo D’arc"
+        ],
+        [
+          "650559#1",
+          "Quality Group"
+        ],
+        [
+          "2513623#1",
+          "MES Ingeniería"
+        ],
+        [
+          "1639108#1",
+          "Petromil S.A."
+        ],
+        [
+          "1935040#1",
+          "Sociedad Mar Mau Ltda."
+        ],
+        [
+          "4466868#1",
+          "Maxtech S.A.S"
+        ],
+        [
+          "3814641#2",
+          "GRUPO G.V.C. S.A.S."
+        ],
+        [
+          "4477023#1,4456066#1",
+          "Alcaldía de Cubará"
+        ],
+        [
+          "1160568#1,983146#1",
+          "Mekano SRL"
+        ],
+        [
+          "4331422#1",
+          "Inproelec"
+        ],
+        [
+          "1099937#1",
+          "Vitopel S.A"
+        ],
+        [
+          "4468024#1",
+          "IES Desarrollos Inmobiliarios"
+        ],
+        [
+          "1593064#1",
+          "Ministerio de Defensa del Estado Plurinacional de Bolivia"
+        ],
+        [
+          "1146550#1",
+          "Empresa de Apoyo a la Producción de Alimentos (EMAPA)"
+        ],
+        [
+          "4298561#1",
+          "Cifneg Consultores Ltda."
+        ],
+        [
+          "1629571#1",
+          "Ubicca Group"
+        ],
+        [
+          "4437820#1",
+          "Prime Refrigeración SAS"
+        ],
+        [
+          "4438116#1",
+          "Roldan Logistics"
+        ],
+        [
+          "4447985#1",
+          "Linalca Informatica SAS BIC"
+        ],
+        [
+          "4448913#1",
+          "Distribuciones JS Tools"
+        ],
+        [
+          "4443796#1",
+          "Rios Silva & Cia SAS"
+        ],
+        [
+          "4520385#1",
+          "Soluciones Civiles"
+        ],
+        [
+          "4450132#1",
+          "Gatblac SpA"
+        ],
+        [
+          "4523712#1",
+          "Intra Ltda."
+        ],
+        [
+          "4485660#1",
+          "Skava Consulting SpA"
+        ],
+        [
+          "4486389#1",
+          "Seals Automatización SpA"
+        ],
+        [
+          "4486643#1",
+          "Runo SpA"
+        ],
+        [
+          "4487512#1",
+          "Servicio TPG Cabrera Obando SpA"
+        ],
+        [
+          "661332#1,571859#1,4495571#1",
+          "Icafal S.A."
+        ],
+        [
+          "4491404#1",
+          "Andor Servicios SpA"
+        ],
+        [
+          "1156514#1",
+          "Ministerio de Obras Públicas y Comunicaciones (MOPC)"
+        ],
+        [
+          "1576484#1,1642862#1",
+          "Lycee Francais de Montevideo"
+        ],
+        [
+          "586453#1",
+          "Comandato S.A"
+        ]
+      ]
+    }
+  ]
 }
