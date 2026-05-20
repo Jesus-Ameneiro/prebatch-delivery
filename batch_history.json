@@ -1264,6 +1264,255 @@
           "Comandato S.A"
         ]
       ]
+    },
+    {
+      "batch_number": 50,
+      "delivery_date": "2026-05-20",
+      "region": "CS",
+      "profile": "Standard CS · 🟠 Batch Golden",
+      "total_cases": 60,
+      "cases": [
+        [
+          "4152842#1",
+          "Corporación Municipal de Conchalí de Educación Salud y Atención de Menores"
+        ],
+        [
+          "2358132#1",
+          "SC Arquitectos"
+        ],
+        [
+          "1172611#1",
+          "Chimu Agropecuaria S.A."
+        ],
+        [
+          "496771#1",
+          "Menorca Inversiones SAC"
+        ],
+        [
+          "1179955#1",
+          "Constructora Lazcano"
+        ],
+        [
+          "1414177#1,662475#1",
+          "Ilustre Municipalidad de Puerto Montt"
+        ],
+        [
+          "680686#1",
+          "Kospo Power Services LTDA"
+        ],
+        [
+          "1089630#1",
+          "Constructora e inversiones lafken ltda"
+        ],
+        [
+          "938606#1",
+          "Bassi Design"
+        ],
+        [
+          "1613472#1",
+          "BAU Accesibilidad Universal"
+        ],
+        [
+          "4107571#1",
+          "Constructora Sigro SA"
+        ],
+        [
+          "615138#1",
+          "Ambar S.A."
+        ],
+        [
+          "2415354#1",
+          "Greenyellow Energia de Colombia SAS"
+        ],
+        [
+          "1472422#1",
+          "Inducascos SAS"
+        ],
+        [
+          "1626663#1",
+          "3D-Advanced"
+        ],
+        [
+          "1991622#2",
+          "Iluminaciones Tecnicas SAS"
+        ],
+        [
+          "3441837#1,1870768#1",
+          "Owly SAS"
+        ],
+        [
+          "1914580#1",
+          "Ezgo SA"
+        ],
+        [
+          "2394267#1",
+          "Calitte"
+        ],
+        [
+          "3399902#1",
+          "Grupo Sidec"
+        ],
+        [
+          "1625290#1",
+          "Constructora Daismol"
+        ],
+        [
+          "1077251#1",
+          "Paisaje VIVO"
+        ],
+        [
+          "999630#1",
+          "Square Group Perú"
+        ],
+        [
+          "1106753#1",
+          "La Venturosa SA"
+        ],
+        [
+          "2416403#1",
+          "S.G. Natclar S.A.C"
+        ],
+        [
+          "236419#3",
+          "Empresa Metal Mecanica S.A."
+        ],
+        [
+          "3454271#1",
+          "Mifarma SAC"
+        ],
+        [
+          "909780#1",
+          "Urbanova Inmobiliaria S.A.C"
+        ],
+        [
+          "1384662#2",
+          "SUMA PUBLICIDAD S.R.L"
+        ],
+        [
+          "198171#4",
+          "HLC Ingenieria y Construccion SAC"
+        ],
+        [
+          "1792740#1,214043#5",
+          "Shougang Hierro Peru SAA"
+        ],
+        [
+          "557859#1",
+          "Dismedsa Cia.Ltda."
+        ],
+        [
+          "419950#1",
+          "Diéguez Arquitectos y Cía. Ltda."
+        ],
+        [
+          "1532722#1,2333677#1",
+          "Bower SAC"
+        ],
+        [
+          "1141644#1",
+          "Devanna Arquitectura"
+        ],
+        [
+          "1430654#1",
+          "Lar Placas y Maderas SA"
+        ],
+        [
+          "1209021#1",
+          "Capco SRL"
+        ],
+        [
+          "1090216#1",
+          "Crosetto Ingeniería S.A"
+        ],
+        [
+          "3856186#1,142463#3,1098874#1",
+          "Rafaela Alimentos SA"
+        ],
+        [
+          "1400546#1",
+          "Elements"
+        ],
+        [
+          "717957#2",
+          "IDE Business School – Universidad de Los Hemisferios"
+        ],
+        [
+          "1101247#1",
+          "Universidad Arturo Prat"
+        ],
+        [
+          "561873#1",
+          "Luminar"
+        ],
+        [
+          "874537#2",
+          "Orengo+Asociados"
+        ],
+        [
+          "1565130#1",
+          "Ofa Arquitectos"
+        ],
+        [
+          "1762974#1",
+          "Mariana Diaz Desarrollista"
+        ],
+        [
+          "556135#1",
+          "Igarreta SACI"
+        ],
+        [
+          "1401722#1",
+          "Constructora Consuegra Santos S.A"
+        ],
+        [
+          "427655#1",
+          "Boga Visual"
+        ],
+        [
+          "1192183#1",
+          "Forero Conde y Cía. Ltda."
+        ],
+        [
+          "946254#1",
+          "Geototal SAS"
+        ],
+        [
+          "1104241#1",
+          "Sporty City SAS"
+        ],
+        [
+          "1446547#1",
+          "CYD Construcciones"
+        ],
+        [
+          "1348726#1",
+          "Universidad de Aysén"
+        ],
+        [
+          "3142257#2",
+          "Importadora y Distribuidora Arquimed LTDA"
+        ],
+        [
+          "1004955#1,3931889#1",
+          "DETECO IC S.A."
+        ],
+        [
+          "2985147#1,1947415#1",
+          "Pares&Alvarez"
+        ],
+        [
+          "764109#1,921415#1",
+          "Coasin Chile S.A."
+        ],
+        [
+          "801551#2",
+          "Consultores e Ingeniería MEPS"
+        ],
+        [
+          "716880#2",
+          "FCAB"
+        ]
+      ]
     }
   ]
 }
