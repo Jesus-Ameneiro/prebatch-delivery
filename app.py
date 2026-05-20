@@ -1283,8 +1283,19 @@ if enable_batch:
 
         st.markdown("---")
         save_col, saveas_col = st.columns(2)
+
+        def _sync_ep_from_widgets(ep_dict):
+            """Explicitly pull latest widget values from st.session_state into ep."""
+            ep_dict["name"] = st.session_state.get("ep_name", ep_dict["name"])
+            for gi, grp in enumerate(ep_dict["groups"]):
+                grp["name"]      = st.session_state.get(f"gname_{gi}",      grp["name"])
+                grp["countries"] = st.session_state.get(f"gcountries_{gi}", grp["countries"])
+                grp["quota"]     = int(st.session_state.get(f"gquota_{gi}", grp["quota"]))
+            return ep_dict
+
         with save_col:
             if st.button("💾 Update Profile", type="primary", use_container_width=True, key="save_profile"):
+                _sync_ep_from_widgets(ep)
                 profile_to_save = {k: v for k, v in ep.items() if not k.startswith("_")}
                 old_name = ep.get("_editing_name", "")
                 if old_name != profile_to_save["name"] and old_name:
@@ -1293,17 +1304,30 @@ if enable_batch:
                         set_default(_rp_for_config, profile_to_save["name"])
                 save_profile(_rp_for_config, profile_to_save)
                 ep["_editing_name"] = profile_to_save["name"]
-                st.success(f"Profile **{profile_to_save['name']}** saved.")
+                st.session_state["dist_select"] = profile_to_save["name"]
+                st.toast(f"✅ Profile **{profile_to_save['name']}** updated.", icon="✅")
                 st.rerun()
+
         with saveas_col:
-            new_profile_name = st.text_input("Save as new profile name", key="saveas_name",
-                                              placeholder="New profile name…")
+            new_profile_name = st.text_input(
+                "Save as new profile name", key="saveas_name",
+                placeholder="New profile name…",
+            )
             if st.button("💾 Save as New", use_container_width=True, key="saveas_btn"):
-                if new_profile_name.strip():
-                    new_p = {k: v for k, v in ep.items() if not k.startswith("_")}
-                    new_p["name"] = new_profile_name.strip()
+                clean_name = st.session_state.get("saveas_name", "").strip()
+                if clean_name:
+                    _sync_ep_from_widgets(ep)
+                    new_p = copy.deepcopy({k: v for k, v in ep.items() if not k.startswith("_")})
+                    new_p["name"] = clean_name
                     save_profile(_rp_for_config, new_p)
-                    st.success(f"New profile **{new_p['name']}** created.")
+                    # Navigate dropdown to new profile and clear input
+                    st.session_state["dist_select"] = clean_name
+                    st.session_state["saveas_name"] = ""
+                    # Update editor to track the new profile
+                    new_ep = copy.deepcopy(new_p)
+                    new_ep["_editing_name"] = clean_name
+                    st.session_state.editor_profile = new_ep
+                    st.toast(f"✅ New profile **{clean_name}** created.", icon="✅")
                     st.rerun()
                 else:
                     st.warning("Enter a name for the new profile.")
