@@ -2758,6 +2758,255 @@
           "Industrias Magromer Cueros y Pieles S.A"
         ]
       ]
+    },
+    {
+      "batch_number": 53,
+      "delivery_date": "2026-06-09",
+      "region": "CS",
+      "profile": "Standard CS · 🟠 Batch Golden",
+      "total_cases": 60,
+      "cases": [
+        [
+          "4588269#1",
+          "Idemin"
+        ],
+        [
+          "4546353#1",
+          "Soluvial E.I.R.L"
+        ],
+        [
+          "4294850#1",
+          "Integra Retail S.A.C."
+        ],
+        [
+          "2446667#2",
+          "Grupo Altos"
+        ],
+        [
+          "4546586#1",
+          "CONCEPTO.COM SAC"
+        ],
+        [
+          "4448312#1",
+          "MINERA BOROO MISQUICHILCA S.A."
+        ],
+        [
+          "4535875#1",
+          "Arquiframme Metal S.A."
+        ],
+        [
+          "4568128#1",
+          "Arteplac"
+        ],
+        [
+          "4590983#1",
+          "Suarez Filabe S.A"
+        ],
+        [
+          "4570145#1",
+          "Multiservicios GMM"
+        ],
+        [
+          "2145417#1",
+          "ULTRAMODULAR PERÚ S.A.C."
+        ],
+        [
+          "3876430#1",
+          "Garabatto"
+        ],
+        [
+          "2446700#3",
+          "Grupo Mecsa."
+        ],
+        [
+          "4448993#1",
+          "Grupo Molicom"
+        ],
+        [
+          "1840584#1",
+          "TRACTO CAMIONES USA S.A.C"
+        ],
+        [
+          "4615441#1",
+          "PRODEMCO S.A.C."
+        ],
+        [
+          "878469#1",
+          "Metrópolis Oficina de Arquitectura"
+        ],
+        [
+          "4609791#1",
+          "Wave Arquitectura"
+        ],
+        [
+          "1129100#1,4478992#1",
+          "JV INGENIEROS"
+        ],
+        [
+          "4648684#1",
+          "Miranda Arquitectos S.A.C."
+        ],
+        [
+          "1739414#2",
+          "Dalcor Contratistas Generales S.A.C."
+        ],
+        [
+          "4366325#1,2073599#1",
+          "Dalvian S.A."
+        ],
+        [
+          "4524312#1",
+          "DYPSA DESARROLLOS Y PROYECTOS S.A."
+        ],
+        [
+          "4609793#1",
+          "Primer Piso Arquitectos"
+        ],
+        [
+          "4609792#1",
+          "HDC Arquitectura"
+        ],
+        [
+          "4527503#1",
+          "Cucina Ideale"
+        ],
+        [
+          "533004#3",
+          "UNIBAG SPA"
+        ],
+        [
+          "1748428#2",
+          "Edificaciones JORSAC"
+        ],
+        [
+          "715742#1",
+          "ROSART"
+        ],
+        [
+          "1023639#1",
+          "Corporación Ecuatoriana de Televisión C. Ltda"
+        ],
+        [
+          "1209330#1",
+          "Consorcio Centro Ferretero Construc Maderas"
+        ],
+        [
+          "1792296#1,1858096#1",
+          "STOP S.A.S."
+        ],
+        [
+          "2222172#2",
+          "Omnitronic S.A."
+        ],
+        [
+          "1678727#1",
+          "Ingenio Construcciones"
+        ],
+        [
+          "798135#1",
+          "UNIBER"
+        ],
+        [
+          "1006898#1,4567420#1",
+          "Grupo Studio"
+        ],
+        [
+          "2189826#1",
+          "Mday S.R.L."
+        ],
+        [
+          "3049438#1",
+          "GOUT Global Outsourcing"
+        ],
+        [
+          "1025747#1",
+          "Urbano Express Argentina S.A."
+        ],
+        [
+          "1264047#1",
+          "Estudio Frigerio Arquitectos Asociados"
+        ],
+        [
+          "2353931#1",
+          "Corralon Belgrano S.A."
+        ],
+        [
+          "1105168#1",
+          "Benito Roggio e Hijos S.A"
+        ],
+        [
+          "1629451#1",
+          "ISCOT SERVICES S.A"
+        ],
+        [
+          "1265310#1",
+          "MOMO ARQ"
+        ],
+        [
+          "711103#1",
+          "Obrando"
+        ],
+        [
+          "1193653#1",
+          "Lihue Ingeniería S. A."
+        ],
+        [
+          "1329080#1",
+          "EXO S.A - Soluciones Tecnologicas"
+        ],
+        [
+          "448954#1",
+          "ARKÉ S.R.L"
+        ],
+        [
+          "1061146#1",
+          "Engineering SAECA"
+        ],
+        [
+          "1143647#1",
+          "HUGE S.R.L."
+        ],
+        [
+          "752966#2",
+          "INTO ITALIA S.A.S."
+        ],
+        [
+          "3867287#1,1498321#1",
+          "Gomez Roco"
+        ],
+        [
+          "2394114#1",
+          "Carpeal"
+        ],
+        [
+          "1791324#1,1793643#1",
+          "Grupo Perfil SA"
+        ],
+        [
+          "4319245#1",
+          "La Mantovana SG S.A"
+        ],
+        [
+          "1548843#1",
+          "BLAU SRL"
+        ],
+        [
+          "574394#1,3259214#1",
+          "Cristian Rodríguez Miranda Servicios E.I.R.L."
+        ],
+        [
+          "891797#1",
+          "Benito Roggio e Hijos S.A Paraguay"
+        ],
+        [
+          "1414832#1",
+          "APE INGENIERIA CIA. LTDA."
+        ],
+        [
+          "3048020#1",
+          "ÓPTICA LOS ANDES S.A"
+        ]
+      ]
     }
   ]
 }
