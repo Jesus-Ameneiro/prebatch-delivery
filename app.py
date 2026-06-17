@@ -402,6 +402,15 @@ def _init_state():
         "batch_validated": False,
         "validation_warnings": [],
         "validation_clean": False,
+        # App mode
+        "app_mode": "Standard Batch",
+        # Big Deals state
+        "bd_result_df": None,
+        "bd_flagged_cases": [],
+        "bd_case_mo": {},
+        "bd_region_processed": None,
+        "bd_ready_to_confirm": False,
+        "bd_unmatched": [], "bd_grouped": [], "bd_duplicates": [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -640,27 +649,94 @@ if st.session_state.get("_last_region") != region_code:
     st.session_state.validation_warnings = []
     st.session_state.validation_clean = False
     st.session_state.prebatch_ready_to_confirm = False
+    st.session_state.bd_result_df = None
+    st.session_state.bd_flagged_cases = []
+    st.session_state.bd_case_mo = {}
+    st.session_state.bd_ready_to_confirm = False
     st.session_state._last_region = region_code
 
-st.divider()
-st.subheader("Upload Source Files")
-col1, col2, col3 = st.columns(3)
-with col1:
-    qs_files = st.file_uploader(
-        "QS Delivery ID File",
-        type=["csv","xlsx","xls"],
-        accept_multiple_files=True,
-        help="Upload one or more QS Delivery ID files. Multiple files are merged into one before processing.",
-    )
-with col2:
-    pl_file = st.file_uploader("PL Batch File (Pleteo Export)", type=["csv","xlsx","xls"],
-        help="CRM export providing the 'Updated' timestamp for Last Updated At (MCC).")
-with col3:
-    pc_file = st.file_uploader("Conflict Check File", type=["csv","xlsx","xls"],
-        help="Investigation data: machine overviews, notes, entity details, and case attribution.")
+# ── Mode Selector ──
+_accent = "#F47920" if region_code == "MCC" else "#1E6FBF"
+st.markdown("")
+mc1, mc2 = st.columns(2)
+with mc1:
+    if st.button(
+        "📋  Standard Batch",
+        use_container_width=True,
+        type="primary" if st.session_state.app_mode == "Standard Batch" else "secondary",
+        key="mode_standard_btn",
+        help="Generate Prebatch files from QS, Pleteo, and Conflict Check exports.",
+    ):
+        st.session_state.app_mode = "Standard Batch"
+        st.rerun()
+with mc2:
+    if st.button(
+        "🏆  Big Deals — 15+ Machines",
+        use_container_width=True,
+        type="primary" if st.session_state.app_mode == "Big Deals" else "secondary",
+        key="mode_bigdeals_btn",
+        help="Special flow for cases with 15+ Total Machines. Conflict Check is optional.",
+    ):
+        st.session_state.app_mode = "Big Deals"
+        st.rerun()
 
-if qs_files and len(qs_files) > 1:
-    st.info(f"📎 **{len(qs_files)} QS files uploaded** — they will be merged into one before processing.")
+_app_mode = st.session_state.app_mode
+
+st.divider()
+
+# ── File Uploaders (mode-specific) ──
+if _app_mode == "Standard Batch":
+    st.subheader("Upload Source Files")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        qs_files = st.file_uploader(
+            "QS Delivery ID File",
+            type=["csv","xlsx","xls"],
+            accept_multiple_files=True,
+            help="Upload one or more QS Delivery ID files. Multiple files are merged into one before processing.",
+        )
+    with col2:
+        pl_file = st.file_uploader("PL Batch File (Pleteo Export)", type=["csv","xlsx","xls"],
+            help="CRM export providing the 'Updated' timestamp for Last Updated At (MCC).")
+    with col3:
+        pc_file = st.file_uploader("Conflict Check File", type=["csv","xlsx","xls"],
+            help="Investigation data: machine overviews, notes, entity details, and case attribution.")
+    if qs_files and len(qs_files) > 1:
+        st.info(f"📎 **{len(qs_files)} QS files uploaded** — they will be merged into one before processing.")
+
+else:  # Big Deals
+    _bd_cls = "batch-section-mcc" if region_code == "MCC" else "batch-section-cs"
+    st.markdown(f"""
+    <div class="{_bd_cls}">
+        <h3>🏆 Big Deals — Special Batch Delivery</h3>
+        <p>For cases with <strong>15+ Total Machines</strong>. Conflict Check is optional — Machine Overview
+        will be generated from individual case files where missing. Previously delivered cases may be included.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("")
+    bd_col1, bd_col2, bd_col3 = st.columns(3)
+    with bd_col1:
+        bd_qs_files = st.file_uploader(
+            "QS Delivery ID File(s)", type=["csv","xlsx","xls"],
+            accept_multiple_files=True, key="bd_qs_uploader",
+            help="One or more QS Delivery ID files. Merged before processing.",
+        )
+    with bd_col2:
+        bd_pl_file = st.file_uploader(
+            "PL Batch File (Pleteo Export)", type=["csv","xlsx","xls"],
+            key="bd_pl_uploader",
+            help="Pleteo CRM export. Required for Last Updated At (MCC).",
+        )
+    with bd_col3:
+        bd_cc_file = st.file_uploader(
+            "Conflict Check (optional)", type=["csv","xlsx","xls"],
+            key="bd_cc_uploader",
+            help="Optional. If provided, Machine Overview is pulled from it where available.",
+        )
+    if bd_cc_file is None:
+        st.caption("ℹ️ No Conflict Check uploaded — Machine Overview will be generated from case sheets for all cases.")
+    if bd_qs_files and len(bd_qs_files) > 1:
+        st.info(f"📎 **{len(bd_qs_files)} QS files uploaded** — they will be merged before processing.")
 
 
 # ──────────────────────────────────────────────
@@ -1145,610 +1221,1064 @@ def next_batch_number(region):
 
 
 # ──────────────────────────────────────────────
-# Batch Distribution Config (after all functions)
+# Big Deals — Helper Functions
 # ──────────────────────────────────────────────
-_batch_cls = "batch-section-mcc" if region_code == "MCC" else "batch-section-cs"
-st.markdown("")
-st.markdown(f"""
-<div class="{_batch_cls}">
-    <h3>📦 Batch Distribution</h3>
-    <p>Optional tool to automatically distribute large Pleteo exports by country group and quota,
-       without manually selecting cases. Use this when working with large batches where cases
-       haven't been pre-selected. If cases were already manually curated for delivery,
-       skip this section and proceed directly to Generate.</p>
-</div>
-""", unsafe_allow_html=True)
-st.markdown("")
 
-enable_batch = st.toggle(
-    "Enable Batch Distribution",
-    value=False, key="batch_toggle",
-    help=(
-        "Use this when you have a large Pleteo export and want the app to automatically "
-        "select cases by country group and quota. "
-        "If you've already manually selected the cases for this delivery, leave this off."
-    ),
-)
+def parse_version_year(version_str: str):
+    """
+    Parse a version string and return the 4-digit year inferred from the
+    highest version's first segment.
+    Handles formats: '21.0: 78, 18.1: 12'  or  '21.25.4525'  or  '21.0'
+    First two digits + 2000 = year  (e.g. 21 → 2021, 18 → 2018).
+    Returns a 4-char year string or None.
+    """
+    if not version_str or str(version_str).strip().lower() in ("", "nan", "none"):
+        return None
+    # Find all leading version numbers before first dot  (e.g. '21' from '21.0')
+    matches = re.findall(r'\b(\d{1,2})\.\d', str(version_str))
+    if not matches:
+        return None
+    highest = max(int(m) for m in matches)
+    if 1 <= highest <= 99:
+        return str(2000 + highest)
+    return None
 
-if enable_batch:
-    st.info(
-        "💡 **About Batch Distribution:** This tool helps deliver large batches from a full "
-        "Pleteo case export without manually picking cases. It selects cases automatically based "
-        "on country group quotas. If you already have a curated list of cases for this batch, "
-        "you don't need to use this — simply generate the Prebatch file directly.",
-        icon=None,
+
+def generate_machine_overview_from_files(machines_df: pd.DataFrame,
+                                          events_df: pd.DataFrame = None) -> str:
+    """
+    Build Machine Overview string from a case's exported machines file.
+    Only counts machines with Approval Status = 'Approved'.
+    Uses the Products column; resolves year via Version if absent from product name.
+    Returns format: 'SketchUp Pro 2021 (3x), SketchUp Make 2017 (1x)'
+    """
+    machines_df = clean_df(machines_df.copy())
+    if "Approval Status" not in machines_df.columns:
+        return ""
+
+    approved = machines_df[
+        machines_df["Approval Status"].str.strip().str.lower() == "approved"
+    ]
+    if approved.empty:
+        return ""
+
+    product_counts: dict = {}
+
+    for _, row in approved.iterrows():
+        products_raw = str(row.get("Products", "")).strip()
+        version_raw  = str(row.get("Version",  "")).strip()
+
+        if not products_raw or products_raw.lower() in ("nan", ""):
+            continue
+
+        for product in [p.strip() for p in products_raw.split(",") if p.strip()]:
+            # Keep year if already present (e.g. 'SketchUp Pro 2021')
+            if re.search(r'\b20\d{2}\b', product):
+                resolved = product
+            else:
+                year = parse_version_year(version_raw)
+                resolved = f"{product} {year}" if year else product
+            product_counts[resolved] = product_counts.get(resolved, 0) + 1
+
+    if not product_counts:
+        return ""
+
+    return ", ".join(
+        f"{name} ({cnt}x)"
+        for name, cnt in sorted(product_counts.items(), key=lambda x: -x[1])
     )
 
-    _rp_for_config = region_code
-    _region_profiles = get_profile_names(_rp_for_config)
-    _default_name = st.session_state.dist_defaults.get(_rp_for_config)
-    _default_idx = _region_profiles.index(_default_name) if _default_name in _region_profiles else 0
 
-    ps_col, def_col, del_col = st.columns([3, 1.2, 1])
-    with ps_col:
-        selected_profile_name = st.selectbox("Distribution Profile", options=_region_profiles,
-                                              index=_default_idx, key="dist_select")
-    with def_col:
-        _is_default = (st.session_state.dist_defaults.get(_rp_for_config) == selected_profile_name)
-        st.markdown("<br>", unsafe_allow_html=True)
-        if _is_default:
-            st.success("Default ✓")
+def process_big_deals_data(qs_df, pl_df, cc_df, region_code):
+    """
+    Process Big Deals cases (Total Machines ≥ 15).
+    cc_df may be None — Machine Overview left blank and case is flagged.
+    Returns: result_df, flagged_case_ids, unmatched, grouped, duplicates
+    """
+    qs_df = clean_df(qs_df)
+    pl_df = clean_df(pl_df)
+    cc_df = clean_df(cc_df) if cc_df is not None else None
+
+    cc_lookup = build_lookup(cc_df, "Case ID") if cc_df is not None else {}
+    pl_lookup  = build_lookup(pl_df, "External Case ID")
+
+    output_rows, flagged_cases = [], []
+    unmatched_cases, grouped_cases, duplicate_cases = [], [], []
+    seen_ids: dict = {}
+
+    for idx, (_, qs_row) in enumerate(qs_df.iterrows()):
+        case_id_raw = str(qs_row.get("Case ID", "")).strip()
+        if not case_id_raw or case_id_raw.lower() == "nan":
+            continue
+        if case_id_raw in seen_ids:
+            duplicate_cases.append(case_id_raw)
+            continue
+        seen_ids[case_id_raw] = idx
+
+        # 15+ machines gate
+        total_m = pd.to_numeric(qs_row.get("Total Machines", 0), errors="coerce")
+        if pd.isna(total_m) or int(total_m) < 15:
+            continue
+
+        case_ids = [c.strip() for c in case_id_raw.split(",") if c.strip()]
+        if len(case_ids) > 1:
+            grouped_cases.append(case_id_raw)
+
+        cc_row = next((cc_lookup[cid] for cid in case_ids if cid in cc_lookup), None)
+        if cc_row is None:
+            if cc_df is not None:
+                unmatched_cases.append(case_id_raw)
+            cc_row = pd.Series(dtype=str)
+
+        machine_overview = (
+            combine_machine_overviews(cc_lookup, case_ids) if len(case_ids) > 1
+            else safe_get(cc_row, "Machine Overview")
+        )
+
+        actionable_domains = safe_get(cc_row, "Actionable Domains") or safe_get(qs_row, "Actionable Domains")
+        website     = safe_get(cc_row, "Website")  or safe_get(qs_row, "Websites")
+        entity_name = safe_get(cc_row, "Pleteo Entity Name") or safe_get(qs_row, "Company Name")
+        first_event = normalize_date(safe_get(qs_row, "First Event"))
+        last_event  = normalize_date(safe_get(qs_row, "Last Event"))
+
+        base = {
+            "Date Added to This Sheet": "",
+            "Is Multi-National": safe_get(cc_row, "Is Multi National"),
+            "Machine Overview": machine_overview,
+            "Investigation Notes": (
+                combine_investigation_notes(cc_lookup, case_ids) if len(case_ids) > 1
+                else safe_get(cc_row, "Investigation Notes")
+            ),
+            "Case ID": case_id_raw,
+            "Company Name": safe_get(cc_row, "Company Name"),
+            "Entity Name": entity_name,
+            "Cylynt Organization Name": safe_get(cc_row, "Cylynt Organization Name"),
+            "Industry": safe_get(cc_row, "Industry"),
+            "Case Tier": safe_get(qs_row, "Case Tier"),
+            "Case Category": safe_get(qs_row, "[Cfa]-Category"),
+            "Actionable Category": safe_get(qs_row, "[Cfa]-ActionableCategory"),
+            "# All Time Machines": safe_get(qs_row, "Total Machines"),
+            "# Actionable Machines": safe_get(qs_row, "Actionable Machines"),
+            "# Difference": safe_get(qs_row, "[CFa]-Difference"),
+            "Actionable Machine IDs": safe_get(qs_row, "Approved Machines"),
+            "First Event": first_event, "Last Event": last_event,
+            "Time Span": safe_get(cc_row, "Time Span"),
+            "Generic Email Address": safe_get(cc_row, "Generic Email Addresses"),
+            "Actionable Domains": actionable_domains,
+            "Website": website,
+        }
+
+        if region_code == "MCC":
+            last_updated = normalize_date(get_latest_updated(pl_lookup, case_ids))
+            row_data = {**base,
+                "Address": safe_get(cc_row, "Address"),
+                "Countries": safe_get(cc_row, "Countries"),
+                "Estimated Case Value": "",
+                "Last Updated At": last_updated,
+                "NNS License Count": "",
+            }
         else:
-            if st.button("Set as Default", key="set_default_btn", use_container_width=True):
-                set_default(_rp_for_config, selected_profile_name); st.rerun()
-    with del_col:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if len(_region_profiles) > 1:
-            if st.button("🗑 Delete", key="del_profile_btn", use_container_width=True):
-                delete_profile(_rp_for_config, selected_profile_name); st.rerun()
-        else:
-            st.button("🗑 Delete", disabled=True, use_container_width=True, key="del_profile_dis")
+            row_data = {**base,
+                "Addresses": safe_get(cc_row, "Address"),
+                "Country": safe_get(cc_row, "Countries"),
+            }
 
-    _selected_profile = get_profile(_rp_for_config, selected_profile_name)
-    if _selected_profile is None:
-        st.error("Profile not found. Please select another.")
-        st.stop()
+        if not machine_overview:
+            flagged_cases.append(case_id_raw)
 
-    if (st.session_state.editor_profile is None
-            or st.session_state.editor_profile.get("_editing_name") != selected_profile_name):
-        ep = copy.deepcopy(_selected_profile)
-        ep["_editing_name"] = selected_profile_name
-        st.session_state.editor_profile = ep
+        output_rows.append(row_data)
 
-    ep = st.session_state.editor_profile
+    target_cols = MCC_COLUMNS if region_code == "MCC" else CS_COLUMNS
+    result_df = pd.DataFrame(output_rows, columns=target_cols)
+    return result_df, flagged_cases, unmatched_cases, grouped_cases, duplicate_cases
 
-    BATCH_TYPE_OPTIONS = {
-        "standard":    "📊 Batch Standard — Fill by country availability (no machine filter)",
-        "low":         "🔵 Batch Low — Cases with < 3 machines only",
-        "traditional": "🟡 Batch Traditional — 50% cases with 3+ machines, rest with 1–2 machines",
-        "golden":      "🟠 Batch Golden — 100% cases with 3+ machines (overflow with anything if needed)",
-    }
 
-    batch_type = st.radio(
-        "Batch Type",
-        options=list(BATCH_TYPE_OPTIONS.keys()),
-        format_func=lambda k: BATCH_TYPE_OPTIONS[k],
-        index=0,
-        key="batch_type_radio",
+# ──────────────────────────────────────────────
+# Batch Distribution Config (Standard Batch only)
+# ──────────────────────────────────────────────
+if _app_mode == "Standard Batch":
+    _batch_cls = "batch-section-mcc" if region_code == "MCC" else "batch-section-cs"
+    st.markdown("")
+    st.markdown(f"""
+    <div class="{_batch_cls}">
+        <h3>📦 Batch Distribution</h3>
+        <p>Optional tool to automatically distribute large Pleteo exports by country group and quota,
+           without manually selecting cases. Use this when working with large batches where cases
+           haven't been pre-selected. If cases were already manually curated for delivery,
+           skip this section and proceed directly to Generate.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("")
+
+    enable_batch = st.toggle(
+        "Enable Batch Distribution",
+        value=False, key="batch_toggle",
         help=(
-            "**Standard** — Default. Fill by country quota, no machine filtering.\n\n"
-            "**Low** — Only selects cases with < 3 Total Machines.\n\n"
-            "**Traditional** — First fills 50% of the total quota with 3+ machine cases "
-            "(by country), then completes with 1–2 machine cases.\n\n"
-            "**Golden** — Selects only 3+ machine cases. Falls back to any available cases "
-            "only if the quota cannot be met with 3+ cases alone (warning shown)."
+            "Use this when you have a large Pleteo export and want the app to automatically "
+            "select cases by country group and quota. "
+            "If you've already manually selected the cases for this delivery, leave this off."
         ),
     )
 
-    with st.expander("✏️ Edit Profile", expanded=False):
-        new_name = st.text_input("Profile Name", value=ep["name"], key="ep_name")
-        ep["name"] = new_name
-        st.markdown("**Groups** — set countries and quota for each group.")
-        country_list = MCC_COUNTRIES if _rp_for_config == "MCC" else CS_COUNTRIES
+    if enable_batch:
+        st.info(
+            "💡 **About Batch Distribution:** This tool helps deliver large batches from a full "
+            "Pleteo case export without manually picking cases. It selects cases automatically based "
+            "on country group quotas. If you already have a curated list of cases for this batch, "
+            "you don't need to use this — simply generate the Prebatch file directly.",
+            icon=None,
+        )
 
-        groups_to_delete = []
-        for gi, grp in enumerate(ep["groups"]):
-            other_used = {c for gj, grp_j in enumerate(ep["groups"])
-                          if gj != gi for c in grp_j.get("countries", [])}
-            available_options = [c for c in country_list if c not in other_used]
-            current_selection = [c for c in grp.get("countries", []) if c in available_options]
-            with st.container():
-                gc1, gc2, gc3, gc4 = st.columns([2.5, 3, 1.2, 0.5])
-                with gc1:
-                    grp["name"] = st.text_input("Group Name", value=grp["name"],
-                                                 key=f"gname_{gi}", label_visibility="collapsed")
-                with gc2:
-                    grp["countries"] = st.multiselect(
-                        "Countries", options=available_options, default=current_selection,
-                        key=f"gcountries_{gi}", label_visibility="collapsed",
-                        help="Countries already assigned to another group are hidden.",
-                    )
-                with gc3:
-                    grp["quota"] = st.number_input("Quota", min_value=1, max_value=500,
-                                                    value=int(grp["quota"]), step=1,
-                                                    key=f"gquota_{gi}", label_visibility="collapsed")
-                with gc4:
-                    if st.button("✕", key=f"gdel_{gi}", help="Remove this group"):
-                        groups_to_delete.append(gi)
+        _rp_for_config = region_code
+        _region_profiles = get_profile_names(_rp_for_config)
+        _default_name = st.session_state.dist_defaults.get(_rp_for_config)
 
-        for gi in reversed(groups_to_delete):
-            ep["groups"].pop(gi)
-        if groups_to_delete: st.rerun()
+        # Use pending selection if a save just happened, then clear it
+        _pending = st.session_state.pop("_pending_dist_select", None)
+        if _pending and _pending in _region_profiles:
+            _select_idx = _region_profiles.index(_pending)
+        elif _default_name in _region_profiles:
+            _select_idx = _region_profiles.index(_default_name)
+        else:
+            _select_idx = 0
 
-        total_quota = sum(g["quota"] for g in ep["groups"])
-        st.caption(f"Total quota across all groups: **{total_quota}** cases")
+        ps_col, def_col, del_col = st.columns([3, 1.2, 1])
+        with ps_col:
+            selected_profile_name = st.selectbox("Distribution Profile", options=_region_profiles,
+                                                  index=_select_idx, key="dist_select")
+        with def_col:
+            _is_default = (st.session_state.dist_defaults.get(_rp_for_config) == selected_profile_name)
+            st.markdown("<br>", unsafe_allow_html=True)
+            if _is_default:
+                st.success("Default ✓")
+            else:
+                if st.button("Set as Default", key="set_default_btn", use_container_width=True):
+                    set_default(_rp_for_config, selected_profile_name); st.rerun()
+        with del_col:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if len(_region_profiles) > 1:
+                if st.button("🗑 Delete", key="del_profile_btn", use_container_width=True):
+                    delete_profile(_rp_for_config, selected_profile_name); st.rerun()
+            else:
+                st.button("🗑 Delete", disabled=True, use_container_width=True, key="del_profile_dis")
 
-        if st.button("＋ Add Group", key="add_group_btn"):
-            ep["groups"].append({"name": "New Group", "countries": [], "quota": 10}); st.rerun()
+        _selected_profile = get_profile(_rp_for_config, selected_profile_name)
+        if _selected_profile is None:
+            st.error("Profile not found. Please select another.")
+            st.stop()
 
-        st.markdown("---")
-        save_col, saveas_col = st.columns(2)
+        if (st.session_state.editor_profile is None
+                or st.session_state.editor_profile.get("_editing_name") != selected_profile_name):
+            ep = copy.deepcopy(_selected_profile)
+            ep["_editing_name"] = selected_profile_name
+            st.session_state.editor_profile = ep
 
-        def _sync_ep_from_widgets(ep_dict):
-            """Explicitly pull latest widget values from st.session_state into ep."""
-            ep_dict["name"] = st.session_state.get("ep_name", ep_dict["name"])
-            for gi, grp in enumerate(ep_dict["groups"]):
-                grp["name"]      = st.session_state.get(f"gname_{gi}",      grp["name"])
-                grp["countries"] = st.session_state.get(f"gcountries_{gi}", grp["countries"])
-                grp["quota"]     = int(st.session_state.get(f"gquota_{gi}", grp["quota"]))
-            return ep_dict
+        ep = st.session_state.editor_profile
 
-        with save_col:
-            if st.button("💾 Update Profile", type="primary", use_container_width=True, key="save_profile"):
-                _sync_ep_from_widgets(ep)
-                profile_to_save = {k: v for k, v in ep.items() if not k.startswith("_")}
-                old_name = ep.get("_editing_name", "")
-                if old_name != profile_to_save["name"] and old_name:
-                    delete_profile(_rp_for_config, old_name)
-                    if st.session_state.dist_defaults.get(_rp_for_config) == old_name:
-                        set_default(_rp_for_config, profile_to_save["name"])
-                save_profile(_rp_for_config, profile_to_save)
-                ep["_editing_name"] = profile_to_save["name"]
-                st.session_state["dist_select"] = profile_to_save["name"]
-                st.toast(f"✅ Profile **{profile_to_save['name']}** updated.", icon="✅")
-                st.rerun()
+        BATCH_TYPE_OPTIONS = {
+            "standard":    "📊 Batch Standard — Fill by country availability (no machine filter)",
+            "low":         "🔵 Batch Low — Cases with < 3 machines only",
+            "traditional": "🟡 Batch Traditional — 50% cases with 3+ machines, rest with 1–2 machines",
+            "golden":      "🟠 Batch Golden — 100% cases with 3+ machines (overflow with anything if needed)",
+        }
 
-        with saveas_col:
-            new_profile_name = st.text_input(
-                "Save as new profile name", key="saveas_name",
-                placeholder="New profile name…",
-            )
-            if st.button("💾 Save as New", use_container_width=True, key="saveas_btn"):
-                clean_name = st.session_state.get("saveas_name", "").strip()
-                if clean_name:
+        batch_type = st.radio(
+            "Batch Type",
+            options=list(BATCH_TYPE_OPTIONS.keys()),
+            format_func=lambda k: BATCH_TYPE_OPTIONS[k],
+            index=0,
+            key="batch_type_radio",
+            help=(
+                "**Standard** — Default. Fill by country quota, no machine filtering.\n\n"
+                "**Low** — Only selects cases with < 3 Total Machines.\n\n"
+                "**Traditional** — First fills 50% of the total quota with 3+ machine cases "
+                "(by country), then completes with 1–2 machine cases.\n\n"
+                "**Golden** — Selects only 3+ machine cases. Falls back to any available cases "
+                "only if the quota cannot be met with 3+ cases alone (warning shown)."
+            ),
+        )
+
+        with st.expander("✏️ Edit Profile", expanded=False):
+            new_name = st.text_input("Profile Name", value=ep["name"], key="ep_name")
+            ep["name"] = new_name
+            st.markdown("**Groups** — set countries and quota for each group.")
+            country_list = MCC_COUNTRIES if _rp_for_config == "MCC" else CS_COUNTRIES
+
+            groups_to_delete = []
+            for gi, grp in enumerate(ep["groups"]):
+                other_used = {c for gj, grp_j in enumerate(ep["groups"])
+                              if gj != gi for c in grp_j.get("countries", [])}
+                available_options = [c for c in country_list if c not in other_used]
+                current_selection = [c for c in grp.get("countries", []) if c in available_options]
+                with st.container():
+                    gc1, gc2, gc3, gc4 = st.columns([2.5, 3, 1.2, 0.5])
+                    with gc1:
+                        grp["name"] = st.text_input("Group Name", value=grp["name"],
+                                                     key=f"gname_{gi}", label_visibility="collapsed")
+                    with gc2:
+                        grp["countries"] = st.multiselect(
+                            "Countries", options=available_options, default=current_selection,
+                            key=f"gcountries_{gi}", label_visibility="collapsed",
+                            help="Countries already assigned to another group are hidden.",
+                        )
+                    with gc3:
+                        grp["quota"] = st.number_input("Quota", min_value=1, max_value=500,
+                                                        value=int(grp["quota"]), step=1,
+                                                        key=f"gquota_{gi}", label_visibility="collapsed")
+                    with gc4:
+                        if st.button("✕", key=f"gdel_{gi}", help="Remove this group"):
+                            groups_to_delete.append(gi)
+
+            for gi in reversed(groups_to_delete):
+                ep["groups"].pop(gi)
+            if groups_to_delete: st.rerun()
+
+            total_quota = sum(g["quota"] for g in ep["groups"])
+            st.caption(f"Total quota across all groups: **{total_quota}** cases")
+
+            if st.button("＋ Add Group", key="add_group_btn"):
+                ep["groups"].append({"name": "New Group", "countries": [], "quota": 10}); st.rerun()
+
+            st.markdown("---")
+            save_col, saveas_col = st.columns(2)
+
+            def _sync_ep_from_widgets(ep_dict):
+                """Explicitly pull latest widget values from st.session_state into ep."""
+                ep_dict["name"] = st.session_state.get("ep_name", ep_dict["name"])
+                for gi, grp in enumerate(ep_dict["groups"]):
+                    grp["name"]      = st.session_state.get(f"gname_{gi}",      grp["name"])
+                    grp["countries"] = st.session_state.get(f"gcountries_{gi}", grp["countries"])
+                    grp["quota"]     = int(st.session_state.get(f"gquota_{gi}", grp["quota"]))
+                return ep_dict
+
+            with save_col:
+                if st.button("💾 Update Profile", type="primary", use_container_width=True, key="save_profile"):
                     _sync_ep_from_widgets(ep)
-                    new_p = copy.deepcopy({k: v for k, v in ep.items() if not k.startswith("_")})
-                    new_p["name"] = clean_name
-                    save_profile(_rp_for_config, new_p)
-                    # Navigate dropdown to new profile and clear input
-                    st.session_state["dist_select"] = clean_name
-                    st.session_state["saveas_name"] = ""
-                    # Update editor to track the new profile
-                    new_ep = copy.deepcopy(new_p)
-                    new_ep["_editing_name"] = clean_name
-                    st.session_state.editor_profile = new_ep
-                    st.toast(f"✅ New profile **{clean_name}** created.", icon="✅")
+                    profile_to_save = {k: v for k, v in ep.items() if not k.startswith("_")}
+                    old_name = ep.get("_editing_name", "")
+                    if old_name != profile_to_save["name"] and old_name:
+                        delete_profile(_rp_for_config, old_name)
+                        if st.session_state.dist_defaults.get(_rp_for_config) == old_name:
+                            set_default(_rp_for_config, profile_to_save["name"])
+                    save_profile(_rp_for_config, profile_to_save)
+                    ep["_editing_name"] = profile_to_save["name"]
+                    st.session_state["_pending_dist_select"] = profile_to_save["name"]
+                    st.toast(f"✅ Profile **{profile_to_save['name']}** updated.", icon="✅")
+                    st.rerun()
+
+            with saveas_col:
+                new_profile_name = st.text_input(
+                    "Save as new profile name", key="saveas_name",
+                    placeholder="New profile name…",
+                )
+                if st.button("💾 Save as New", use_container_width=True, key="saveas_btn"):
+                    clean_name = st.session_state.get("saveas_name", "").strip()
+                    if clean_name:
+                        _sync_ep_from_widgets(ep)
+                        new_p = copy.deepcopy({k: v for k, v in ep.items() if not k.startswith("_")})
+                        new_p["name"] = clean_name
+                        save_profile(_rp_for_config, new_p)
+                        # Navigate dropdown to new profile and clear input
+                        st.session_state["_pending_dist_select"] = clean_name
+                        st.session_state["saveas_name"] = ""
+                        # Update editor to track the new profile
+                        new_ep = copy.deepcopy(new_p)
+                        new_ep["_editing_name"] = clean_name
+                        st.session_state.editor_profile = new_ep
+                        st.toast(f"✅ New profile **{clean_name}** created.", icon="✅")
+                        st.rerun()
+                    else:
+                        st.warning("Enter a name for the new profile.")
+
+        with st.expander("⬆ Import / Export Profiles (JSON)", expanded=False):
+            exp_col, imp_col = st.columns(2)
+            with exp_col:
+                st.download_button("⬇ Export All Profiles as JSON", data=export_profiles_json(),
+                                   file_name="batch_distributions.json", mime="application/json",
+                                   use_container_width=True, key="export_json")
+            with imp_col:
+                imp_file = st.file_uploader("Import profiles JSON", type=["json"], key="import_json_file")
+                if imp_file:
+                    try:
+                        import_profiles_json(imp_file.read().decode())
+                        st.success("Profiles imported successfully.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Import failed: {e}")
+    else:
+        # Toggle OFF — load default profile silently, apply Standard type
+        _default_name = st.session_state.dist_defaults.get(region_code)
+        ep = copy.deepcopy(get_profile(region_code, _default_name)) if _default_name else None
+        if ep:
+            ep["_editing_name"] = _default_name
+        batch_type = "standard"
+
+
+    # ──────────────────────────────────────────────
+    # Delivery ID Search String Generator
+    # ──────────────────────────────────────────────
+    st.markdown("---")
+    with st.expander("🔗 Delivery ID Search String Generator", expanded=False):
+        st.markdown(
+            "Upload a Pleteo export to generate **External Case ID** search strings "
+            "for the QuickSuite Delivery ID search bar. Split at 100 IDs each by default. "
+            "Use the **copy button** (top-right of each code block) to copy directly."
+        )
+        id_file = st.file_uploader("Upload Pleteo export (CSV / XLSX)", type=["csv","xlsx","xls"],
+                                    key="id_gen_file")
+        if id_file is not None:
+            try:
+                df_id = clean_df(read_file(id_file))
+                col_options = list(df_id.columns)
+                preferred = ["External Case ID", "external_case_id", "ExternalCaseID", "Case ID"]
+                default_col = next((c for c in preferred if c in col_options), col_options[0])
+                ic1, ic2 = st.columns([2, 1])
+                with ic1:
+                    id_col = st.selectbox("ID Column", options=col_options,
+                                          index=col_options.index(default_col), key="id_col_select")
+                with ic2:
+                    chunk_size = st.number_input("IDs per string", min_value=10, max_value=500,
+                                                  value=100, step=10, key="id_chunk_size")
+                ids = [str(v).strip() for v in df_id[id_col]
+                       if str(v).strip() and str(v).strip().lower() not in ("nan","none","")]
+                if not ids:
+                    st.warning("No valid IDs found in the selected column.")
+                else:
+                    strings = generate_id_strings(ids, int(chunk_size))
+                    total_strings = len(strings)
+                    st.success(f"**{len(ids)}** IDs → **{total_strings}** string{'s' if total_strings > 1 else ''} "
+                               f"(≤ {int(chunk_size)} IDs each)")
+                    for si, s in enumerate(strings, 1):
+                        n_ids = len(s.split(","))
+                        st.markdown(
+                            f"**String {si} of {total_strings}** &nbsp;·&nbsp; "
+                            f"<span style='color:#F47920;font-weight:600;'>{n_ids} IDs</span>",
+                            unsafe_allow_html=True,
+                        )
+                        st.code(s, language=None)
+            except Exception as e:
+                st.error(f"Error reading file: {e}")
+
+
+    # ──────────────────────────────────────────────
+    # Processing Area
+    # ──────────────────────────────────────────────
+    st.divider()
+    all_uploaded = bool(qs_files and pl_file and pc_file)
+    qs_df_v = pl_df_v = cc_df_v = None
+    all_valid = False
+
+    if any([qs_files, pl_file, pc_file]):
+        with st.expander("File Validation", expanded=True):
+            vc1, vc2, vc3 = st.columns(3)
+            with vc1:
+                if qs_files:
+                    try:
+                        merged_qs = clean_df(merge_qs_files(qs_files))
+                        ok, missing = validate_file(merged_qs, QS_REQUIRED)
+                        label = f"QS Delivery ID ({len(qs_files)} file{'s' if len(qs_files) > 1 else ''})"
+                        if ok:
+                            st.markdown(f'<span class="val-ok">✔ {label}</span> — {len(merged_qs)} rows, {len(merged_qs.columns)} columns', unsafe_allow_html=True)
+                            qs_df_v, qs_ok = merged_qs, True
+                        else:
+                            st.markdown(f'<span class="val-err">✘ {label}</span> — missing: `{"`, `".join(sorted(missing))}`', unsafe_allow_html=True)
+                            qs_df_v, qs_ok = None, False
+                    except Exception as e:
+                        st.markdown(f'<span class="val-err">✘ QS Delivery ID</span> — could not read file(s): {e}', unsafe_allow_html=True)
+                        qs_df_v, qs_ok = None, False
+                else:
+                    qs_ok = False
+            with vc2: pl_df_v, pl_ok = show_validation(pl_file, PL_REQUIRED, "PL Batch")
+            with vc3: cc_df_v, cc_ok = show_validation(pc_file, CC_REQUIRED, "Conflict Check")
+        all_valid = all_uploaded and qs_ok and pl_ok and cc_ok
+
+    # ── Action Buttons Row ──
+    if all_uploaded:
+        if not all_valid:
+            st.warning("One or more files failed validation. Resolve the column errors before continuing.")
+
+        btn_col1, btn_col2 = st.columns(2)
+
+        # ── Validate Batch ──
+        with btn_col1:
+            if st.button("🔍 Validate Batch", use_container_width=True, disabled=not all_valid,
+                         help="Check Case IDs against previously confirmed deliveries."):
+                try:
+                    qs_temp = clean_df(merge_qs_files(qs_files))
+                    case_ids_to_validate = [
+                        str(v).strip() for v in qs_temp.get("Case ID", qs_temp.iloc[:, 0])
+                        if str(v).strip() and str(v).strip().lower() != "nan"
+                    ]
+                    warnings_hist, is_clean = validate_against_history(case_ids_to_validate, region_code)
+                    st.session_state.validation_warnings = warnings_hist
+                    st.session_state.validation_clean = is_clean
+                    st.session_state.batch_validated = True
+                    st.session_state.prebatch_ready_to_confirm = False
+                    st.session_state.result_df = None
+                except Exception as e:
+                    st.error(f"Validation error: {e}")
+
+        # ── Generate Prebatch (only after validation) ──
+        with btn_col2:
+            generate_disabled = not all_valid or not st.session_state.batch_validated
+            generate_help = (
+                "Run Validate Batch first." if not st.session_state.batch_validated else
+                "Resolve file validation errors first." if not all_valid else
+                "Generate the Prebatch output file."
+            )
+            if st.button("▶ Generate Prebatch File", type="primary", use_container_width=True,
+                         disabled=generate_disabled, help=generate_help):
+                with st.spinner("Processing files..."):
+                    try:
+                        raw_df, unmatched, grouped, duplicates = process_data(
+                            qs_df_v, pl_df_v, cc_df_v, region_code
+                        )
+                        st.session_state.raw_df        = raw_df
+                        st.session_state.unmatched     = unmatched
+                        st.session_state.grouped       = grouped
+                        st.session_state.duplicates    = duplicates
+                        st.session_state.region_processed = region_code
+                        st.session_state.dist_report   = None
+                        st.session_state.dist_warnings = []
+                        st.session_state.dist_applied  = False
+                        st.session_state.prebatch_ready_to_confirm = True
+
+                        # Always apply distribution — toggle controls type/profile choice only
+                        # Toggle OFF = Standard type with default profile
+                        if ep is not None:
+                            profile_clean = {k: v for k, v in ep.items() if not k.startswith("_")}
+                            try:
+                                final_df, report, dw = apply_batch_distribution(
+                                    raw_df, profile_clean, region_code, batch_type=batch_type
+                                )
+                                st.session_state.result_df     = final_df
+                                st.session_state.dist_report   = report
+                                st.session_state.dist_warnings = dw
+                                st.session_state.dist_applied  = True
+                            except Exception as dist_err:
+                                st.warning(f"Distribution could not be applied: {dist_err}. Using full merge.")
+                                st.session_state.result_df = raw_df
+                        else:
+                            st.session_state.result_df = raw_df
+
+                        # Log entry — always records the final output cases
+                        final = st.session_state.result_df
+                        st.session_state.generation_log.append({
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "region": region_code, "total": len(final),
+                            "grouped": len(grouped), "unmatched": len(unmatched),
+                            "duplicates": len(duplicates), "confirmed": False,
+                            "batch_number": None, "delivery_date": None,
+                            "cases": [(r["Case ID"], r.get("Entity Name","")) for _, r in final.iterrows()],
+                        })
+                    except Exception as e:
+                        st.error(f"Error processing files: {str(e)}")
+                        st.exception(e)
+
+        # ── Validation Result Display ──
+        if st.session_state.batch_validated:
+            if st.session_state.validation_clean:
+                st.success(
+                    "✅ **Batch validated — No repeated Case IDs found.** "
+                    "All cases in this batch are new to the delivery history. "
+                    "You may now generate the Prebatch file."
+                )
+            else:
+                st.warning(
+                    f"⚠️ **{len(st.session_state.validation_warnings)} previously delivered Case ID(s) detected.** "
+                    "This is a warning only — you can still generate the Prebatch file. "
+                    "These cases may be relaunches or recontacts."
+                )
+                with st.expander(f"View {len(st.session_state.validation_warnings)} repeated Case ID(s)", expanded=False):
+                    for w in st.session_state.validation_warnings:
+                        st.markdown(f"- {w}")
+
+    else:
+        missing = [n for f, n in [(qs_files,"QS Delivery ID"),(pl_file,"PL Batch"),(pc_file,"Conflict Check")] if not f]
+        st.info(f"Upload the remaining file(s) to proceed: **{', '.join(missing)}**")
+
+
+    # ──────────────────────────────────────────────
+    # Results + Confirm Batch Delivery
+    # ──────────────────────────────────────────────
+    if st.session_state.result_df is not None:
+        result_df = st.session_state.result_df
+        raw_df    = st.session_state.raw_df if st.session_state.raw_df is not None else result_df
+        rp        = st.session_state.region_processed
+        dist_applied  = st.session_state.dist_applied
+        dist_report   = st.session_state.dist_report
+        dist_warnings = st.session_state.dist_warnings
+
+        st.divider()
+
+        # ── Top metrics ──
+        if dist_applied and dist_report:
+            batch_label = BATCH_LABELS.get(dist_report.get("batch_type", "standard"), "Batch")
+            is_custom = enable_batch
+            st.markdown(
+                f"**Prebatch — {dist_report['profile_name']} · {batch_label}** "
+                f"&nbsp;·&nbsp; {len(result_df)} of {len(raw_df)} cases selected"
+            )
+            for w in dist_warnings:
+                st.warning(w)
+
+            if is_custom:
+                gr_cols = st.columns(len(dist_report["groups"]))
+                for col, grp in zip(gr_cols, dist_report["groups"]):
+                    overflow_note = " (+overflow)" if grp.get("overflow_note") else ""
+                    delta_val = "On target" if grp["shortfall"] == 0 else f"-{grp['shortfall']} short"
+                    col.metric(
+                        label=grp["group"],
+                        value=f"{grp['filled']} / {grp['quota']}",
+                        delta=f"{delta_val}{overflow_note}",
+                        delta_color="normal" if grp["shortfall"] == 0 else "inverse",
+                    )
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Cases in Prebatch",  len(result_df))
+            m2.metric("Total Available",    len(raw_df))
+            m3.metric("Backlog",            dist_report.get("total_backlog", 0))
+            m4.metric("Duplicates Removed", len(st.session_state.duplicates))
+        else:
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total Cases",        len(result_df))
+            m2.metric("Grouped Entities",   len(st.session_state.grouped))
+            m3.metric("Unmatched",          len(st.session_state.unmatched))
+            m4.metric("Duplicates Removed", len(st.session_state.duplicates))
+
+        # ── Diagnostics ──
+        dcols = st.columns(3)
+        with dcols[0]:
+            if st.session_state.unmatched:
+                with st.expander(f"⚠ Unmatched ({len(st.session_state.unmatched)})"):
+                    st.caption("Included with blank Conflict Check fields.")
+                    for c in st.session_state.unmatched: st.code(c)
+        with dcols[1]:
+            if st.session_state.grouped:
+                with st.expander(f"ℹ Grouped ({len(st.session_state.grouped)})"):
+                    st.caption("Machine Overview and Notes combined.")
+                    for c in st.session_state.grouped: st.code(c)
+        with dcols[2]:
+            if st.session_state.duplicates:
+                with st.expander(f"🚫 Duplicates Removed ({len(st.session_state.duplicates)})"):
+                    st.caption("First occurrence kept.")
+                    for c in st.session_state.duplicates: st.code(c)
+
+        # ── Full merge reference (only shown when distribution was applied) ──
+        if dist_applied and raw_df is not None and len(raw_df) != len(result_df):
+            with st.expander(f"📋 Full merge reference ({len(raw_df)} cases before distribution)", expanded=False):
+                st.caption("All cases from the file merge, before distribution filtering was applied.")
+                st.dataframe(raw_df, use_container_width=True, height=300)
+
+        # ── Backlog report (only when distribution applied) ──
+        if dist_applied and dist_report and not dist_report["backlog_table"].empty:
+            with st.expander("📋 Backlog Report — cases not included in this Prebatch", expanded=False):
+                st.caption("Available for the next batch delivery, broken down by country.")
+                st.dataframe(dist_report["backlog_table"], use_container_width=True,
+                             hide_index=True,
+                             height=min(35 * len(dist_report["backlog_table"]) + 40, 380))
+                st.download_button(
+                    "⬇ Download Backlog Report",
+                    data=to_excel(dist_report["backlog_table"], sheet_name="Backlog"),
+                    file_name=f"Backlog_{rp}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_backlog",
+                )
+
+        # ── Prebatch preview + download ──
+        st.subheader("Prebatch Preview")
+        st.dataframe(result_df, use_container_width=True, height=380)
+        st.download_button(
+            label=f"⬇ Download Prebatch_{rp}.xlsx",
+            data=to_excel(result_df),
+            file_name=f"Prebatch_{rp}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary", use_container_width=True,
+        )
+
+        # ════════════════════════════════════════
+        # CONFIRM BATCH DELIVERY
+        # ════════════════════════════════════════
+        if st.session_state.prebatch_ready_to_confirm:
+            st.markdown("")
+            st.markdown("""
+            <div class="confirm-section">
+                <h3>✅ Confirm Batch Delivery</h3>
+                <p>Complete the delivery details below and confirm to register this Prebatch permanently in the delivery history.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("")
+
+            suggested_batch = next_batch_number(rp)
+            cf1, cf2 = st.columns(2)
+            with cf1:
+                delivery_date = st.date_input(
+                    "Delivery Date", value=datetime.today(), key="confirm_date",
+                )
+            with cf2:
+                batch_number = st.number_input(
+                    "Batch Number", min_value=1, value=suggested_batch, step=1,
+                    key="confirm_batch_num",
+                    help=f"Suggested: {suggested_batch} (last confirmed + 1 for {rp})",
+                )
+
+            existing_nums = [b.get("batch_number") for b in
+                             st.session_state.delivery_history.get(rp, [])]
+            is_duplicate = int(batch_number) in existing_nums
+
+            if is_duplicate:
+                st.warning(
+                    f"⚠️ Batch **#{int(batch_number)}** already exists for **{rp}**. "
+                    "Confirming will **replace** the existing entry. "
+                    "Tick the checkbox below to proceed."
+                )
+                overwrite_confirmed = st.checkbox(
+                    f"Yes, I want to replace Batch #{int(batch_number)} for {rp}",
+                    value=False,
+                    key="overwrite_confirm_checkbox",
+                )
+            else:
+                overwrite_confirmed = True
+
+            if dist_applied and dist_report:
+                profile_name = dist_report.get("profile_name", "—")
+                batch_label  = BATCH_LABELS.get(dist_report.get("batch_type","standard"), "Batch")
+                confirm_label = f"{profile_name} · {batch_label}"
+            else:
+                confirm_label = "Full Prebatch (no distribution applied)"
+
+            st.caption(
+                f"**{len(result_df)} cases** will be confirmed · "
+                f"Profile: **{confirm_label}** · Region: **{rp}**"
+            )
+
+            if st.button("✅ Confirm Batch Delivery", type="primary",
+                         use_container_width=True, key="confirm_delivery_btn",
+                         disabled=is_duplicate and not overwrite_confirmed):
+                batch_entry = {
+                    "batch_number": int(batch_number),
+                    "delivery_date": delivery_date.strftime("%Y-%m-%d"),
+                    "region": rp, "profile": confirm_label,
+                    "total_cases": len(result_df),
+                    "cases": [[row["Case ID"], row.get("Entity Name", "")]
+                               for _, row in result_df.iterrows()],
+                }
+                region_batches = st.session_state.delivery_history.setdefault(rp, [])
+                replaced = False
+                for i, b in enumerate(region_batches):
+                    if b.get("batch_number") == int(batch_number):
+                        region_batches[i] = batch_entry; replaced = True; break
+                if not replaced:
+                    region_batches.append(batch_entry)
+                st.session_state.delivery_history[rp] = sorted(
+                    region_batches, key=lambda b: b.get("batch_number", 0)
+                )
+                with st.spinner("Saving batch history to GitHub..."):
+                    ok, err, new_sha = save_history_to_github(
+                        st.session_state.delivery_history, st.session_state.history_sha
+                    )
+                if ok:
+                    st.session_state.history_sha = new_sha
+                    st.session_state.prebatch_ready_to_confirm = False
+                    if st.session_state.generation_log:
+                        last = st.session_state.generation_log[-1]
+                        last.update({"confirmed": True, "batch_number": int(batch_number),
+                                     "delivery_date": delivery_date.strftime("%Y-%m-%d")})
+                    st.success(
+                        f"🎉 Batch **#{int(batch_number)}** for **{rp}** confirmed and saved! "
+                        f"**{len(result_df)}** cases registered on **{delivery_date.strftime('%Y-%m-%d')}**."
+                    )
                     st.rerun()
                 else:
-                    st.warning("Enter a name for the new profile.")
+                    st.error(f"❌ Failed to save to GitHub: {err}")
+                    st.info("Batch added to in-memory history but not persisted. "
+                            "Check your GitHub secrets and retry.")
+                    with st.expander("🔧 Run GitHub Diagnostics", expanded=True):
+                        for label, ok_check, detail in diagnose_github():
+                            st.markdown(f"{'✅' if ok_check else '❌'} **{label}** — {detail}")
+                        st.markdown("---")
+                        st.markdown(
+                            "**Common fixes:**\n"
+                            "- `GITHUB_REPO` must be `owner/repo-name`\n"
+                            "- `GITHUB_BRANCH` must match your default branch\n"
+                            "- `GITHUB_TOKEN` must have `repo` scope\n"
+                            "- Update secrets in Streamlit Cloud → App Settings → Secrets, then reboot"
+                        )
 
-    with st.expander("⬆ Import / Export Profiles (JSON)", expanded=False):
-        exp_col, imp_col = st.columns(2)
-        with exp_col:
-            st.download_button("⬇ Export All Profiles as JSON", data=export_profiles_json(),
-                               file_name="batch_distributions.json", mime="application/json",
-                               use_container_width=True, key="export_json")
-        with imp_col:
-            imp_file = st.file_uploader("Import profiles JSON", type=["json"], key="import_json_file")
-            if imp_file:
+
+    # ──────────────────────────────────────────────
+
+# ──────────────────────────────────────────────
+# Big Deals Processing & UI
+# ──────────────────────────────────────────────
+elif _app_mode == "Big Deals":
+    # ── Validate + Process ──────────────────────
+    bd_all_uploaded = bool(bd_qs_files and bd_pl_file)
+    bd_all_valid = False
+    bd_qs_df_v = bd_pl_df_v = bd_cc_df_v = None
+
+    if bd_qs_files or bd_pl_file or bd_cc_file:
+        with st.expander("File Validation", expanded=True):
+            bv1, bv2, bv3 = st.columns(3)
+            with bv1:
+                if bd_qs_files:
+                    try:
+                        merged_bd_qs = clean_df(merge_qs_files(bd_qs_files))
+                        ok, miss = validate_file(merged_bd_qs, QS_REQUIRED)
+                        lbl = f"QS Delivery ID ({len(bd_qs_files)} file{'s' if len(bd_qs_files)>1 else ''})"
+                        if ok:
+                            st.markdown(f'<span class="val-ok">✔ {lbl}</span> — {len(merged_bd_qs)} rows', unsafe_allow_html=True)
+                            bd_qs_df_v, bd_qs_ok = merged_bd_qs, True
+                        else:
+                            st.markdown(f'<span class="val-err">✘ {lbl}</span> — missing: `{"`, `".join(sorted(miss))}`', unsafe_allow_html=True)
+                            bd_qs_df_v, bd_qs_ok = None, False
+                    except Exception as e:
+                        st.markdown(f'<span class="val-err">✘ QS</span> — {e}', unsafe_allow_html=True)
+                        bd_qs_df_v, bd_qs_ok = None, False
+                else:
+                    bd_qs_ok = False
+            with bv2:
+                bd_pl_df_v, bd_pl_ok = show_validation(bd_pl_file, PL_REQUIRED, "PL Batch")
+            with bv3:
+                if bd_cc_file:
+                    bd_cc_df_v, _ = show_validation(bd_cc_file, CC_REQUIRED, "Conflict Check")
+                else:
+                    st.markdown('<span style="color:#888;">— Conflict Check not uploaded (optional)</span>', unsafe_allow_html=True)
+        bd_all_valid = bd_qs_ok and bd_pl_ok
+
+    if not bd_all_uploaded:
+        missing_bd = []
+        if not bd_qs_files: missing_bd.append("QS Delivery ID")
+        if not bd_pl_file: missing_bd.append("PL Batch")
+        st.info(f"Upload the required file(s) to proceed: **{', '.join(missing_bd)}**")
+    else:
+        if not bd_all_valid:
+            st.warning("One or more files failed validation. Resolve errors before processing.")
+
+        if st.button("▶ Process Big Deals Cases", type="primary",
+                     use_container_width=True, disabled=not bd_all_valid,
+                     key="bd_process_btn"):
+            with st.spinner("Processing Big Deals cases..."):
                 try:
-                    import_profiles_json(imp_file.read().decode())
-                    st.success("Profiles imported successfully.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Import failed: {e}")
-else:
-    # Toggle OFF — load default profile silently, apply Standard type
-    _default_name = st.session_state.dist_defaults.get(region_code)
-    ep = copy.deepcopy(get_profile(region_code, _default_name)) if _default_name else None
-    if ep:
-        ep["_editing_name"] = _default_name
-    batch_type = "standard"
-
-
-# ──────────────────────────────────────────────
-# Delivery ID Search String Generator
-# ──────────────────────────────────────────────
-st.markdown("---")
-with st.expander("🔗 Delivery ID Search String Generator", expanded=False):
-    st.markdown(
-        "Upload a Pleteo export to generate **External Case ID** search strings "
-        "for the QuickSuite Delivery ID search bar. Split at 100 IDs each by default. "
-        "Use the **copy button** (top-right of each code block) to copy directly."
-    )
-    id_file = st.file_uploader("Upload Pleteo export (CSV / XLSX)", type=["csv","xlsx","xls"],
-                                key="id_gen_file")
-    if id_file is not None:
-        try:
-            df_id = clean_df(read_file(id_file))
-            col_options = list(df_id.columns)
-            preferred = ["External Case ID", "external_case_id", "ExternalCaseID", "Case ID"]
-            default_col = next((c for c in preferred if c in col_options), col_options[0])
-            ic1, ic2 = st.columns([2, 1])
-            with ic1:
-                id_col = st.selectbox("ID Column", options=col_options,
-                                      index=col_options.index(default_col), key="id_col_select")
-            with ic2:
-                chunk_size = st.number_input("IDs per string", min_value=10, max_value=500,
-                                              value=100, step=10, key="id_chunk_size")
-            ids = [str(v).strip() for v in df_id[id_col]
-                   if str(v).strip() and str(v).strip().lower() not in ("nan","none","")]
-            if not ids:
-                st.warning("No valid IDs found in the selected column.")
-            else:
-                strings = generate_id_strings(ids, int(chunk_size))
-                total_strings = len(strings)
-                st.success(f"**{len(ids)}** IDs → **{total_strings}** string{'s' if total_strings > 1 else ''} "
-                           f"(≤ {int(chunk_size)} IDs each)")
-                for si, s in enumerate(strings, 1):
-                    n_ids = len(s.split(","))
-                    st.markdown(
-                        f"**String {si} of {total_strings}** &nbsp;·&nbsp; "
-                        f"<span style='color:#F47920;font-weight:600;'>{n_ids} IDs</span>",
-                        unsafe_allow_html=True,
+                    bd_res, bd_flagged, bd_unm, bd_grp, bd_dup = process_big_deals_data(
+                        bd_qs_df_v, bd_pl_df_v,
+                        bd_cc_df_v if bd_cc_file else None,
+                        region_code,
                     )
-                    st.code(s, language=None)
-        except Exception as e:
-            st.error(f"Error reading file: {e}")
-
-
-# ──────────────────────────────────────────────
-# Processing Area
-# ──────────────────────────────────────────────
-st.divider()
-all_uploaded = bool(qs_files and pl_file and pc_file)
-qs_df_v = pl_df_v = cc_df_v = None
-all_valid = False
-
-if any([qs_files, pl_file, pc_file]):
-    with st.expander("File Validation", expanded=True):
-        vc1, vc2, vc3 = st.columns(3)
-        with vc1:
-            if qs_files:
-                try:
-                    merged_qs = clean_df(merge_qs_files(qs_files))
-                    ok, missing = validate_file(merged_qs, QS_REQUIRED)
-                    label = f"QS Delivery ID ({len(qs_files)} file{'s' if len(qs_files) > 1 else ''})"
-                    if ok:
-                        st.markdown(f'<span class="val-ok">✔ {label}</span> — {len(merged_qs)} rows, {len(merged_qs.columns)} columns', unsafe_allow_html=True)
-                        qs_df_v, qs_ok = merged_qs, True
-                    else:
-                        st.markdown(f'<span class="val-err">✘ {label}</span> — missing: `{"`, `".join(sorted(missing))}`', unsafe_allow_html=True)
-                        qs_df_v, qs_ok = None, False
+                    st.session_state.bd_result_df       = bd_res
+                    st.session_state.bd_flagged_cases   = bd_flagged
+                    st.session_state.bd_case_mo         = {}        # reset MO cache
+                    st.session_state.bd_region_processed = region_code
+                    st.session_state.bd_unmatched       = bd_unm
+                    st.session_state.bd_grouped         = bd_grp
+                    st.session_state.bd_duplicates      = bd_dup
+                    st.session_state.bd_ready_to_confirm = False
                 except Exception as e:
-                    st.markdown(f'<span class="val-err">✘ QS Delivery ID</span> — could not read file(s): {e}', unsafe_allow_html=True)
-                    qs_df_v, qs_ok = None, False
-            else:
-                qs_ok = False
-        with vc2: pl_df_v, pl_ok = show_validation(pl_file, PL_REQUIRED, "PL Batch")
-        with vc3: cc_df_v, cc_ok = show_validation(pc_file, CC_REQUIRED, "Conflict Check")
-    all_valid = all_uploaded and qs_ok and pl_ok and cc_ok
-
-# ── Action Buttons Row ──
-if all_uploaded:
-    if not all_valid:
-        st.warning("One or more files failed validation. Resolve the column errors before continuing.")
-
-    btn_col1, btn_col2 = st.columns(2)
-
-    # ── Validate Batch ──
-    with btn_col1:
-        if st.button("🔍 Validate Batch", use_container_width=True, disabled=not all_valid,
-                     help="Check Case IDs against previously confirmed deliveries."):
-            try:
-                qs_temp = clean_df(merge_qs_files(qs_files))
-                case_ids_to_validate = [
-                    str(v).strip() for v in qs_temp.get("Case ID", qs_temp.iloc[:, 0])
-                    if str(v).strip() and str(v).strip().lower() != "nan"
-                ]
-                warnings_hist, is_clean = validate_against_history(case_ids_to_validate, region_code)
-                st.session_state.validation_warnings = warnings_hist
-                st.session_state.validation_clean = is_clean
-                st.session_state.batch_validated = True
-                st.session_state.prebatch_ready_to_confirm = False
-                st.session_state.result_df = None
-            except Exception as e:
-                st.error(f"Validation error: {e}")
-
-    # ── Generate Prebatch (only after validation) ──
-    with btn_col2:
-        generate_disabled = not all_valid or not st.session_state.batch_validated
-        generate_help = (
-            "Run Validate Batch first." if not st.session_state.batch_validated else
-            "Resolve file validation errors first." if not all_valid else
-            "Generate the Prebatch output file."
-        )
-        if st.button("▶ Generate Prebatch File", type="primary", use_container_width=True,
-                     disabled=generate_disabled, help=generate_help):
-            with st.spinner("Processing files..."):
-                try:
-                    raw_df, unmatched, grouped, duplicates = process_data(
-                        qs_df_v, pl_df_v, cc_df_v, region_code
-                    )
-                    st.session_state.raw_df        = raw_df
-                    st.session_state.unmatched     = unmatched
-                    st.session_state.grouped       = grouped
-                    st.session_state.duplicates    = duplicates
-                    st.session_state.region_processed = region_code
-                    st.session_state.dist_report   = None
-                    st.session_state.dist_warnings = []
-                    st.session_state.dist_applied  = False
-                    st.session_state.prebatch_ready_to_confirm = True
-
-                    # Always apply distribution — toggle controls type/profile choice only
-                    # Toggle OFF = Standard type with default profile
-                    if ep is not None:
-                        profile_clean = {k: v for k, v in ep.items() if not k.startswith("_")}
-                        try:
-                            final_df, report, dw = apply_batch_distribution(
-                                raw_df, profile_clean, region_code, batch_type=batch_type
-                            )
-                            st.session_state.result_df     = final_df
-                            st.session_state.dist_report   = report
-                            st.session_state.dist_warnings = dw
-                            st.session_state.dist_applied  = True
-                        except Exception as dist_err:
-                            st.warning(f"Distribution could not be applied: {dist_err}. Using full merge.")
-                            st.session_state.result_df = raw_df
-                    else:
-                        st.session_state.result_df = raw_df
-
-                    # Log entry — always records the final output cases
-                    final = st.session_state.result_df
-                    st.session_state.generation_log.append({
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "region": region_code, "total": len(final),
-                        "grouped": len(grouped), "unmatched": len(unmatched),
-                        "duplicates": len(duplicates), "confirmed": False,
-                        "batch_number": None, "delivery_date": None,
-                        "cases": [(r["Case ID"], r.get("Entity Name","")) for _, r in final.iterrows()],
-                    })
-                except Exception as e:
-                    st.error(f"Error processing files: {str(e)}")
+                    st.error(f"Processing error: {e}")
                     st.exception(e)
 
-    # ── Validation Result Display ──
-    if st.session_state.batch_validated:
-        if st.session_state.validation_clean:
-            st.success(
-                "✅ **Batch validated — No repeated Case IDs found.** "
-                "All cases in this batch are new to the delivery history. "
-                "You may now generate the Prebatch file."
-            )
-        else:
-            st.warning(
-                f"⚠️ **{len(st.session_state.validation_warnings)} previously delivered Case ID(s) detected.** "
-                "This is a warning only — you can still generate the Prebatch file. "
-                "These cases may be relaunches or recontacts."
-            )
-            with st.expander(f"View {len(st.session_state.validation_warnings)} repeated Case ID(s)", expanded=False):
-                for w in st.session_state.validation_warnings:
-                    st.markdown(f"- {w}")
+    # ── Results ─────────────────────────────────
+    if st.session_state.bd_result_df is not None:
+        bd_df  = st.session_state.bd_result_df
+        bd_rp  = st.session_state.bd_region_processed
+        n_flag = len(st.session_state.bd_flagged_cases)
+        n_ok   = len(bd_df) - n_flag
 
-else:
-    missing = [n for f, n in [(qs_files,"QS Delivery ID"),(pl_file,"PL Batch"),(pc_file,"Conflict Check")] if not f]
-    st.info(f"Upload the remaining file(s) to proceed: **{', '.join(missing)}**")
+        st.divider()
+        bm1, bm2, bm3, bm4 = st.columns(4)
+        bm1.metric("Big Deals Cases (15+ machines)", len(bd_df))
+        bm2.metric("Machine Overview ✅",  n_ok)
+        bm3.metric("Flagged — MO Missing ⚠️", n_flag)
+        bm4.metric("Duplicates Removed", len(st.session_state.bd_duplicates))
 
+        if st.session_state.bd_unmatched:
+            with st.expander(f"⚠ Unmatched in CC ({len(st.session_state.bd_unmatched)})"):
+                for c in st.session_state.bd_unmatched: st.code(c)
 
-# ──────────────────────────────────────────────
-# Results + Confirm Batch Delivery
-# ──────────────────────────────────────────────
-if st.session_state.result_df is not None:
-    result_df = st.session_state.result_df
-    raw_df    = st.session_state.raw_df if st.session_state.raw_df is not None else result_df
-    rp        = st.session_state.region_processed
-    dist_applied  = st.session_state.dist_applied
-    dist_report   = st.session_state.dist_report
-    dist_warnings = st.session_state.dist_warnings
+        # ── Flagged Cases — per-case file uploaders ──
+        if st.session_state.bd_flagged_cases:
+            already_resolved = [c for c in st.session_state.bd_flagged_cases
+                                 if c in st.session_state.bd_case_mo]
+            still_missing    = [c for c in st.session_state.bd_flagged_cases
+                                 if c not in st.session_state.bd_case_mo]
 
-    st.divider()
+            st.markdown("")
+            st.markdown(f"""
+            <div class="backlog-card">
+                <strong style="color:#F47920;">⚠️ {n_flag} case(s) missing Machine Overview</strong><br>
+                <span style="font-size:0.85rem;color:#4A4A4A;">
+                Upload the Machine Sheet and Case Event Sheet for each case below.
+                Machine Overview will be generated automatically when both files are uploaded.
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("")
 
-    # ── Top metrics ──
-    if dist_applied and dist_report:
-        batch_label = BATCH_LABELS.get(dist_report.get("batch_type", "standard"), "Batch")
-        is_custom = enable_batch
-        st.markdown(
-            f"**Prebatch — {dist_report['profile_name']} · {batch_label}** "
-            f"&nbsp;·&nbsp; {len(result_df)} of {len(raw_df)} cases selected"
-        )
-        for w in dist_warnings:
-            st.warning(w)
+            for case_id in st.session_state.bd_flagged_cases:
+                safe_key = re.sub(r'[^a-zA-Z0-9]', '_', case_id)
 
-        if is_custom:
-            gr_cols = st.columns(len(dist_report["groups"]))
-            for col, grp in zip(gr_cols, dist_report["groups"]):
-                overflow_note = " (+overflow)" if grp.get("overflow_note") else ""
-                delta_val = "On target" if grp["shortfall"] == 0 else f"-{grp['shortfall']} short"
-                col.metric(
-                    label=grp["group"],
-                    value=f"{grp['filled']} / {grp['quota']}",
-                    delta=f"{delta_val}{overflow_note}",
-                    delta_color="normal" if grp["shortfall"] == 0 else "inverse",
-                )
+                # Get entity name for display
+                row_match = bd_df[bd_df["Case ID"] == case_id]
+                entity = row_match["Entity Name"].iloc[0] if not row_match.empty else ""
+                resolved_mo = st.session_state.bd_case_mo.get(case_id, "")
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Cases in Prebatch",  len(result_df))
-        m2.metric("Total Available",    len(raw_df))
-        m3.metric("Backlog",            dist_report.get("total_backlog", 0))
-        m4.metric("Duplicates Removed", len(st.session_state.duplicates))
-    else:
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total Cases",        len(result_df))
-        m2.metric("Grouped Entities",   len(st.session_state.grouped))
-        m3.metric("Unmatched",          len(st.session_state.unmatched))
-        m4.metric("Duplicates Removed", len(st.session_state.duplicates))
+                status_icon = "✅" if resolved_mo else "⚠️"
+                with st.expander(
+                    f"{status_icon} **{case_id}** — {entity}",
+                    expanded=not bool(resolved_mo),
+                ):
+                    if resolved_mo:
+                        st.success(f"Machine Overview generated: **{resolved_mo}**")
+                        if st.button("🔄 Re-upload sheets", key=f"bd_reup_{safe_key}"):
+                            st.session_state.bd_case_mo.pop(case_id, None)
+                            st.rerun()
+                    else:
+                        uc1, uc2 = st.columns(2)
+                        with uc1:
+                            mach_file = st.file_uploader(
+                                "Machine Sheet", type=["csv","xlsx","xls"],
+                                key=f"bd_mach_{safe_key}",
+                                help="Exported Machines file for this case.",
+                            )
+                        with uc2:
+                            evt_file = st.file_uploader(
+                                "Case Event Sheet", type=["csv","xlsx","xls"],
+                                key=f"bd_evt_{safe_key}",
+                                help="Exported Case Events file for this case.",
+                            )
+                        if mach_file and evt_file:
+                            with st.spinner(f"Generating Machine Overview for {case_id}…"):
+                                try:
+                                    mach_df = read_file(mach_file)
+                                    evt_df  = read_file(evt_file)
+                                    mo = generate_machine_overview_from_files(mach_df, evt_df)
+                                    if mo:
+                                        st.session_state.bd_case_mo[case_id] = mo
+                                        st.success(f"Generated: **{mo}**")
+                                        st.rerun()
+                                    else:
+                                        st.warning(
+                                            "No Approved machines found in the uploaded file. "
+                                            "Check that the Approval Status column contains 'Approved' entries."
+                                        )
+                                except Exception as e:
+                                    st.error(f"Error processing sheets: {e}")
 
-    # ── Diagnostics ──
-    dcols = st.columns(3)
-    with dcols[0]:
-        if st.session_state.unmatched:
-            with st.expander(f"⚠ Unmatched ({len(st.session_state.unmatched)})"):
-                st.caption("Included with blank Conflict Check fields.")
-                for c in st.session_state.unmatched: st.code(c)
-    with dcols[1]:
-        if st.session_state.grouped:
-            with st.expander(f"ℹ Grouped ({len(st.session_state.grouped)})"):
-                st.caption("Machine Overview and Notes combined.")
-                for c in st.session_state.grouped: st.code(c)
-    with dcols[2]:
-        if st.session_state.duplicates:
-            with st.expander(f"🚫 Duplicates Removed ({len(st.session_state.duplicates)})"):
-                st.caption("First occurrence kept.")
-                for c in st.session_state.duplicates: st.code(c)
+        # ── Build final DataFrame with MOs applied ──
+        bd_final = bd_df.copy()
+        for case_id, mo in st.session_state.bd_case_mo.items():
+            bd_final.loc[bd_final["Case ID"] == case_id, "Machine Overview"] = mo
 
-    # ── Full merge reference (only shown when distribution was applied) ──
-    if dist_applied and raw_df is not None and len(raw_df) != len(result_df):
-        with st.expander(f"📋 Full merge reference ({len(raw_df)} cases before distribution)", expanded=False):
-            st.caption("All cases from the file merge, before distribution filtering was applied.")
-            st.dataframe(raw_df, use_container_width=True, height=300)
-
-    # ── Backlog report (only when distribution applied) ──
-    if dist_applied and dist_report and not dist_report["backlog_table"].empty:
-        with st.expander("📋 Backlog Report — cases not included in this Prebatch", expanded=False):
-            st.caption("Available for the next batch delivery, broken down by country.")
-            st.dataframe(dist_report["backlog_table"], use_container_width=True,
-                         hide_index=True,
-                         height=min(35 * len(dist_report["backlog_table"]) + 40, 380))
-            st.download_button(
-                "⬇ Download Backlog Report",
-                data=to_excel(dist_report["backlog_table"], sheet_name="Backlog"),
-                file_name=f"Backlog_{rp}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_backlog",
+        # Remaining unfilled MO
+        still_unfilled = bd_final[bd_final["Machine Overview"].str.strip() == ""]["Case ID"].tolist()
+        if still_unfilled:
+            st.caption(
+                f"⚠️ {len(still_unfilled)} case(s) still have no Machine Overview and will be "
+                "included in the output with an empty cell."
             )
 
-    # ── Prebatch preview + download ──
-    st.subheader("Prebatch Preview")
-    st.dataframe(result_df, use_container_width=True, height=380)
-    st.download_button(
-        label=f"⬇ Download Prebatch_{rp}.xlsx",
-        data=to_excel(result_df),
-        file_name=f"Prebatch_{rp}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary", use_container_width=True,
-    )
-
-    # ════════════════════════════════════════
-    # CONFIRM BATCH DELIVERY
-    # ════════════════════════════════════════
-    if st.session_state.prebatch_ready_to_confirm:
-        st.markdown("")
-        st.markdown("""
-        <div class="confirm-section">
-            <h3>✅ Confirm Batch Delivery</h3>
-            <p>Complete the delivery details below and confirm to register this Prebatch permanently in the delivery history.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("")
-
-        suggested_batch = next_batch_number(rp)
-        cf1, cf2 = st.columns(2)
-        with cf1:
-            delivery_date = st.date_input(
-                "Delivery Date", value=datetime.today(), key="confirm_date",
-            )
-        with cf2:
-            batch_number = st.number_input(
-                "Batch Number", min_value=1, value=suggested_batch, step=1,
-                key="confirm_batch_num",
-                help=f"Suggested: {suggested_batch} (last confirmed + 1 for {rp})",
-            )
-
-        existing_nums = [b.get("batch_number") for b in
-                         st.session_state.delivery_history.get(rp, [])]
-        is_duplicate = int(batch_number) in existing_nums
-
-        if is_duplicate:
-            st.warning(
-                f"⚠️ Batch **#{int(batch_number)}** already exists for **{rp}**. "
-                "Confirming will **replace** the existing entry. "
-                "Tick the checkbox below to proceed."
-            )
-            overwrite_confirmed = st.checkbox(
-                f"Yes, I want to replace Batch #{int(batch_number)} for {rp}",
-                value=False,
-                key="overwrite_confirm_checkbox",
-            )
-        else:
-            overwrite_confirmed = True
-
-        if dist_applied and dist_report:
-            profile_name = dist_report.get("profile_name", "—")
-            batch_label  = BATCH_LABELS.get(dist_report.get("batch_type","standard"), "Batch")
-            confirm_label = f"{profile_name} · {batch_label}"
-        else:
-            confirm_label = "Full Prebatch (no distribution applied)"
-
-        st.caption(
-            f"**{len(result_df)} cases** will be confirmed · "
-            f"Profile: **{confirm_label}** · Region: **{rp}**"
+        # ── Preview ─────────────────────────────────
+        st.subheader("📋 Big Deals Prebatch Preview")
+        # Highlight rows with missing MO
+        def _highlight_missing(row):
+            color = "#FFF3CD" if not str(row.get("Machine Overview","")).strip() else ""
+            return [f"background-color: {color}" for _ in row]
+        st.dataframe(
+            bd_final.style.apply(_highlight_missing, axis=1),
+            use_container_width=True, height=400,
         )
 
-        if st.button("✅ Confirm Batch Delivery", type="primary",
-                     use_container_width=True, key="confirm_delivery_btn",
-                     disabled=is_duplicate and not overwrite_confirmed):
-            batch_entry = {
-                "batch_number": int(batch_number),
-                "delivery_date": delivery_date.strftime("%Y-%m-%d"),
-                "region": rp, "profile": confirm_label,
-                "total_cases": len(result_df),
-                "cases": [[row["Case ID"], row.get("Entity Name", "")]
-                           for _, row in result_df.iterrows()],
-            }
-            region_batches = st.session_state.delivery_history.setdefault(rp, [])
-            replaced = False
-            for i, b in enumerate(region_batches):
-                if b.get("batch_number") == int(batch_number):
-                    region_batches[i] = batch_entry; replaced = True; break
-            if not replaced:
-                region_batches.append(batch_entry)
-            st.session_state.delivery_history[rp] = sorted(
-                region_batches, key=lambda b: b.get("batch_number", 0)
-            )
-            with st.spinner("Saving batch history to GitHub..."):
-                ok, err, new_sha = save_history_to_github(
-                    st.session_state.delivery_history, st.session_state.history_sha
+        # ── Generate + Download ─────────────────────
+        st.download_button(
+            label=f"⬇ Download Big Deals Prebatch_{bd_rp}.xlsx",
+            data=to_excel(bd_final),
+            file_name=f"BigDeals_Prebatch_{bd_rp}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary", use_container_width=True, key="bd_download_btn",
+        )
+        st.session_state.bd_ready_to_confirm = True
+
+        # ── Confirm Delivery ─────────────────────────
+        if st.session_state.bd_ready_to_confirm:
+            st.markdown("")
+            st.markdown("""
+            <div class="confirm-section">
+                <h3>✅ Confirm Big Deals Delivery</h3>
+                <p>Register this Big Deals batch permanently in the delivery history.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("")
+
+            bd_suggested = next_batch_number(bd_rp)
+            bdc1, bdc2 = st.columns(2)
+            with bdc1:
+                bd_delivery_date = st.date_input(
+                    "Delivery Date", value=datetime.today(), key="bd_confirm_date")
+            with bdc2:
+                bd_batch_number = st.number_input(
+                    "Batch Number", min_value=1, value=bd_suggested, step=1,
+                    key="bd_confirm_batch_num",
+                    help=f"Suggested: {bd_suggested} (last confirmed + 1 for {bd_rp})",
                 )
-            if ok:
-                st.session_state.history_sha = new_sha
-                st.session_state.prebatch_ready_to_confirm = False
-                if st.session_state.generation_log:
-                    last = st.session_state.generation_log[-1]
-                    last.update({"confirmed": True, "batch_number": int(batch_number),
-                                 "delivery_date": delivery_date.strftime("%Y-%m-%d")})
-                st.success(
-                    f"🎉 Batch **#{int(batch_number)}** for **{rp}** confirmed and saved! "
-                    f"**{len(result_df)}** cases registered on **{delivery_date.strftime('%Y-%m-%d')}**."
+
+            bd_existing_nums = [b.get("batch_number") for b in
+                                 st.session_state.delivery_history.get(bd_rp, [])]
+            bd_is_dup = int(bd_batch_number) in bd_existing_nums
+            if bd_is_dup:
+                st.warning(
+                    f"⚠️ Batch **#{int(bd_batch_number)}** already exists for **{bd_rp}**. "
+                    "Tick the checkbox to replace it."
                 )
-                st.rerun()
+                bd_overwrite_ok = st.checkbox(
+                    f"Yes, replace Batch #{int(bd_batch_number)} for {bd_rp}",
+                    key="bd_overwrite_checkbox",
+                )
             else:
-                st.error(f"❌ Failed to save to GitHub: {err}")
-                st.info("Batch added to in-memory history but not persisted. "
-                        "Check your GitHub secrets and retry.")
-                with st.expander("🔧 Run GitHub Diagnostics", expanded=True):
-                    for label, ok_check, detail in diagnose_github():
-                        st.markdown(f"{'✅' if ok_check else '❌'} **{label}** — {detail}")
-                    st.markdown("---")
-                    st.markdown(
-                        "**Common fixes:**\n"
-                        "- `GITHUB_REPO` must be `owner/repo-name`\n"
-                        "- `GITHUB_BRANCH` must match your default branch\n"
-                        "- `GITHUB_TOKEN` must have `repo` scope\n"
-                        "- Update secrets in Streamlit Cloud → App Settings → Secrets, then reboot"
+                bd_overwrite_ok = True
+
+            st.caption(
+                f"**{len(bd_final)} cases** will be confirmed · "
+                f"Profile: **Big Deals** · Region: **{bd_rp}**"
+            )
+
+            if st.button("✅ Confirm Big Deals Delivery", type="primary",
+                         use_container_width=True, key="bd_confirm_btn",
+                         disabled=bd_is_dup and not bd_overwrite_ok):
+                bd_entry = {
+                    "batch_number": int(bd_batch_number),
+                    "delivery_date": bd_delivery_date.strftime("%Y-%m-%d"),
+                    "region": bd_rp, "profile": "Big Deals (15+ machines)",
+                    "total_cases": len(bd_final),
+                    "cases": [[r["Case ID"], r.get("Entity Name","")]
+                               for _, r in bd_final.iterrows()],
+                }
+                region_batches = st.session_state.delivery_history.setdefault(bd_rp, [])
+                replaced = False
+                for i, b in enumerate(region_batches):
+                    if b.get("batch_number") == int(bd_batch_number):
+                        region_batches[i] = bd_entry; replaced = True; break
+                if not replaced:
+                    region_batches.append(bd_entry)
+                st.session_state.delivery_history[bd_rp] = sorted(
+                    region_batches, key=lambda b: b.get("batch_number", 0)
+                )
+                with st.spinner("Saving to GitHub..."):
+                    ok, err, new_sha = save_history_to_github(
+                        st.session_state.delivery_history, st.session_state.history_sha
                     )
-
-
-# ──────────────────────────────────────────────
+                if ok:
+                    st.session_state.history_sha = new_sha
+                    st.session_state.bd_ready_to_confirm = False
+                    st.success(
+                        f"🎉 Big Deals Batch **#{int(bd_batch_number)}** for **{bd_rp}** confirmed! "
+                        f"**{len(bd_final)} cases** registered on **{bd_delivery_date.strftime('%Y-%m-%d')}**."
+                    )
+                    st.rerun()
+                else:
+                    st.error(f"❌ Failed to save to GitHub: {err}")
+                    with st.expander("🔧 Run GitHub Diagnostics", expanded=True):
+                        for label, ok_c, detail in diagnose_github():
+                            st.markdown(f"{'✅' if ok_c else '❌'} **{label}** — {detail}")
 # Footer
 # ──────────────────────────────────────────────
 st.markdown("""
