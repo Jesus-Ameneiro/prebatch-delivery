@@ -2133,24 +2133,46 @@ elif _app_mode == "Big Deals":
                             st.session_state.bd_case_mo.pop(case_id, None)
                             st.rerun()
                     else:
+                        # How many Case IDs are in this entity (comma-separated)
+                        n_sub_cases = len([c for c in case_id.split(",") if c.strip()])
+                        multi_hint = (
+                            f" Upload one file per sub-case ({n_sub_cases} expected)."
+                            if n_sub_cases > 1 else ""
+                        )
                         uc1, uc2 = st.columns(2)
                         with uc1:
-                            mach_file = st.file_uploader(
-                                "Machine Sheet", type=["csv","xlsx","xls"],
+                            mach_files = st.file_uploader(
+                                "Machine Sheet(s)",
+                                type=["csv","xlsx","xls"],
+                                accept_multiple_files=True,
                                 key=f"bd_mach_{safe_key}",
-                                help="Exported Machines file for this case.",
+                                help=f"Exported Machines file(s) for this case.{multi_hint} Multiple files are merged before processing.",
                             )
                         with uc2:
-                            evt_file = st.file_uploader(
-                                "Case Event Sheet", type=["csv","xlsx","xls"],
+                            evt_files = st.file_uploader(
+                                "Case Event Sheet(s)",
+                                type=["csv","xlsx","xls"],
+                                accept_multiple_files=True,
                                 key=f"bd_evt_{safe_key}",
-                                help="Exported Case Events file for this case.",
+                                help=f"Exported Case Events file(s) for this case.{multi_hint} Multiple files are merged before processing.",
                             )
-                        if mach_file and evt_file:
+                        if n_sub_cases > 1:
+                            st.caption(
+                                f"ℹ️ This entity has **{n_sub_cases} sub-cases** — "
+                                f"upload one Machine Sheet and one Event Sheet per sub-case. "
+                                f"All files will be merged into a single Machine Overview."
+                            )
+                        if mach_files and evt_files:
                             with st.spinner(f"Generating Machine Overview for {case_id}…"):
                                 try:
-                                    mach_df = read_file(mach_file)
-                                    evt_df  = read_file(evt_file)
+                                    # Merge all machine files into one DataFrame
+                                    mach_frames = [read_file(f) for f in mach_files]
+                                    mach_df = pd.concat(mach_frames, ignore_index=True) if len(mach_frames) > 1 else mach_frames[0]
+
+                                    # Merge all event files into one DataFrame
+                                    evt_frames = [read_file(f) for f in evt_files]
+                                    evt_df = pd.concat(evt_frames, ignore_index=True) if len(evt_frames) > 1 else evt_frames[0]
+
                                     mo = generate_machine_overview_from_files(mach_df, evt_df)
                                     if mo:
                                         st.session_state.bd_case_mo[case_id] = mo
@@ -2158,7 +2180,7 @@ elif _app_mode == "Big Deals":
                                         st.rerun()
                                     else:
                                         st.warning(
-                                            "No Approved machines found in the uploaded file. "
+                                            "No Approved machines found across the uploaded files. "
                                             "Check that the Approval Status column contains 'Approved' entries."
                                         )
                                 except Exception as e:
@@ -2181,8 +2203,9 @@ elif _app_mode == "Big Deals":
         st.subheader("📋 Big Deals Prebatch Preview")
         # Highlight rows with missing MO
         def _highlight_missing(row):
-            color = "#FFF3CD" if not str(row.get("Machine Overview","")).strip() else ""
-            return [f"background-color: {color}" for _ in row]
+            if not str(row.get("Machine Overview", "")).strip():
+                return ["background-color: #FFF3CD; color: #1A1A1A;" for _ in row]
+            return ["" for _ in row]
         st.dataframe(
             bd_final.style.apply(_highlight_missing, axis=1),
             use_container_width=True, height=400,
