@@ -393,7 +393,7 @@ def _init_state():
         "prebatch_ready_to_confirm": False,
         "editor_profile": None,
         # Delivery history (persistent via GitHub)
-        "delivery_history": {"MCC": [], "CS": []},
+        "delivery_history": {"MCC": [], "CS": [], "BigDeals_MCC": [], "BigDeals_CS": []},
         "history_sha": None,
         "history_loaded": False,
         "history_load_msg": "",
@@ -425,15 +425,23 @@ if not st.session_state.history_loaded:
         st.session_state.history_load_ok = False
         st.session_state.history_load_msg = f"⚠️ Could not load batch history from GitHub: {err}"
     else:
-        st.session_state.delivery_history = history or {"MCC": [], "CS": []}
+        st.session_state.delivery_history = history or {"MCC": [], "CS": [], "BigDeals_MCC": [], "BigDeals_CS": []}
+        # Ensure BigDeals keys exist even in older history files
+        for _key in ("BigDeals_MCC", "BigDeals_CS"):
+            st.session_state.delivery_history.setdefault(_key, [])
         st.session_state.history_sha = sha
         st.session_state.history_load_ok = True
         total = len(st.session_state.delivery_history.get("MCC", [])) + \
                 len(st.session_state.delivery_history.get("CS", []))
+        bd_total = len(st.session_state.delivery_history.get("BigDeals_MCC", [])) + \
+                   len(st.session_state.delivery_history.get("BigDeals_CS", []))
         st.session_state.history_load_msg = (
             f"✅ Batch history loaded — "
             f"MCC: {len(st.session_state.delivery_history.get('MCC', []))} batch(es) · "
             f"CS: {len(st.session_state.delivery_history.get('CS', []))} batch(es)"
+            + (f" · Big Deals MCC: {len(st.session_state.delivery_history.get('BigDeals_MCC', []))} · "
+               f"Big Deals CS: {len(st.session_state.delivery_history.get('BigDeals_CS', []))}"
+               if bd_total > 0 else "")
         )
     st.session_state.history_loaded = True
 
@@ -528,7 +536,7 @@ with st.sidebar:
         batches = st.session_state.delivery_history.get(reg, [])
         if batches:
             st.markdown(f"**{reg}** — {len(batches)} batch(es)")
-            for b in reversed(batches[-5:]):   # last 5 per region
+            for b in reversed(batches[-5:]):
                 label = (f"#{b.get('batch_number','?')} · "
                          f"{b.get('delivery_date','?')} · "
                          f"{b.get('total_cases',0)} cases")
@@ -542,6 +550,32 @@ with st.sidebar:
                         )
         else:
             st.caption(f"{reg}: No deliveries confirmed yet.")
+
+    # ── Big Deals History ──
+    bd_has_any = any(
+        st.session_state.delivery_history.get(f"BigDeals_{reg}", [])
+        for reg in ["MCC", "CS"]
+    )
+    if bd_has_any:
+        st.markdown('<hr style="margin:0.6rem 0;border:none;border-top:1px solid #3A3A3A;">', unsafe_allow_html=True)
+        st.markdown("### 🏆 Big Deals History")
+        for reg in ["MCC", "CS"]:
+            bd_key = f"BigDeals_{reg}"
+            batches = st.session_state.delivery_history.get(bd_key, [])
+            if batches:
+                st.markdown(f"**Big Deals {reg}** — {len(batches)} batch(es)")
+                for b in reversed(batches[-5:]):
+                    label = (f"#{b.get('batch_number','?')} · "
+                             f"{b.get('delivery_date','?')} · "
+                             f"{b.get('total_cases',0)} cases")
+                    with st.expander(label, expanded=False):
+                        st.caption(f"Region: {reg} · Big Deals")
+                        cases = b.get("cases", [])
+                        if cases:
+                            st.dataframe(
+                                pd.DataFrame(cases, columns=["Case ID", "Entity Name"]),
+                                use_container_width=True, hide_index=True, height=180,
+                            )
     st.markdown('<hr style="margin:1.2rem 0 0.8rem 0;border:none;border-top:1px solid #3A3A3A;">', unsafe_allow_html=True)
 
     # ── Session Generation Log ──
@@ -860,27 +894,29 @@ def generate_id_strings(ids: list, chunk_size: int = 100) -> list:
 
 def validate_against_history(case_ids: list, region: str):
     """
-    Check whether any of the given Case IDs were previously delivered.
+    Check whether any of the given Case IDs were previously delivered
+    in either standard batches or Big Deals batches for this region.
     Returns (warnings list, is_clean bool).
-    Warnings — not a blocking error, just informational.
     """
     delivered_ids = {}
-    for batch in st.session_state.delivery_history.get(region, []):
-        batch_num = batch.get("batch_number", "?")
-        batch_date = batch.get("delivery_date", "?")
-        for case in batch.get("cases", []):
-            cid = case[0] if isinstance(case, (list, tuple)) else case.get("case_id", "")
-            delivered_ids[cid] = (batch_num, batch_date)
+    # Check both standard and Big Deals history for this region
+    for hist_key in [region, f"BigDeals_{region}"]:
+        for batch in st.session_state.delivery_history.get(hist_key, []):
+            batch_num  = batch.get("batch_number", "?")
+            batch_date = batch.get("delivery_date", "?")
+            batch_type = "Big Deals" if hist_key.startswith("BigDeals_") else "Standard"
+            for case in batch.get("cases", []):
+                cid = case[0] if isinstance(case, (list, tuple)) else case.get("case_id", "")
+                delivered_ids[cid] = (batch_num, batch_date, batch_type)
 
     warnings = []
     for cid in case_ids:
-        # For grouped IDs (comma-separated) check each sub-ID
         sub_ids = [c.strip() for c in cid.split(",") if c.strip()]
         for sub in sub_ids:
             if sub in delivered_ids:
-                b_num, b_date = delivered_ids[sub]
+                b_num, b_date, b_type = delivered_ids[sub]
                 warnings.append(
-                    f"**{sub}** was previously delivered in Batch **#{b_num}** on {b_date}."
+                    f"**{sub}** was previously delivered in {b_type} Batch **#{b_num}** on {b_date}."
                 )
 
     return warnings, len(warnings) == 0
@@ -2232,7 +2268,7 @@ elif _app_mode == "Big Deals":
             """, unsafe_allow_html=True)
             st.markdown("")
 
-            bd_suggested = next_batch_number(bd_rp)
+            bd_suggested = next_batch_number(f"BigDeals_{bd_rp}")
             bdc1, bdc2 = st.columns(2)
             with bdc1:
                 bd_delivery_date = st.date_input(
@@ -2241,19 +2277,20 @@ elif _app_mode == "Big Deals":
                 bd_batch_number = st.number_input(
                     "Batch Number", min_value=1, value=bd_suggested, step=1,
                     key="bd_confirm_batch_num",
-                    help=f"Suggested: {bd_suggested} (last confirmed + 1 for {bd_rp})",
+                    help=f"Suggested: {bd_suggested} (last Big Deals confirmed + 1 for {bd_rp})",
                 )
 
+            _bd_hist_key = f"BigDeals_{bd_rp}"
             bd_existing_nums = [b.get("batch_number") for b in
-                                 st.session_state.delivery_history.get(bd_rp, [])]
+                                 st.session_state.delivery_history.get(_bd_hist_key, [])]
             bd_is_dup = int(bd_batch_number) in bd_existing_nums
             if bd_is_dup:
                 st.warning(
-                    f"⚠️ Batch **#{int(bd_batch_number)}** already exists for **{bd_rp}**. "
+                    f"⚠️ Big Deals Batch **#{int(bd_batch_number)}** already exists for **{bd_rp}**. "
                     "Tick the checkbox to replace it."
                 )
                 bd_overwrite_ok = st.checkbox(
-                    f"Yes, replace Batch #{int(bd_batch_number)} for {bd_rp}",
+                    f"Yes, replace Big Deals Batch #{int(bd_batch_number)} for {bd_rp}",
                     key="bd_overwrite_checkbox",
                 )
             else:
@@ -2261,7 +2298,7 @@ elif _app_mode == "Big Deals":
 
             st.caption(
                 f"**{len(bd_final)} cases** will be confirmed · "
-                f"Profile: **Big Deals** · Region: **{bd_rp}**"
+                f"Stored as: **BigDeals_{bd_rp}** · Batch **#{int(bd_batch_number)}**"
             )
 
             if st.button("✅ Confirm Big Deals Delivery", type="primary",
@@ -2275,14 +2312,14 @@ elif _app_mode == "Big Deals":
                     "cases": [[r["Case ID"], r.get("Entity Name","")]
                                for _, r in bd_final.iterrows()],
                 }
-                region_batches = st.session_state.delivery_history.setdefault(bd_rp, [])
+                region_batches = st.session_state.delivery_history.setdefault(_bd_hist_key, [])
                 replaced = False
                 for i, b in enumerate(region_batches):
                     if b.get("batch_number") == int(bd_batch_number):
                         region_batches[i] = bd_entry; replaced = True; break
                 if not replaced:
                     region_batches.append(bd_entry)
-                st.session_state.delivery_history[bd_rp] = sorted(
+                st.session_state.delivery_history[_bd_hist_key] = sorted(
                     region_batches, key=lambda b: b.get("batch_number", 0)
                 )
                 with st.spinner("Saving to GitHub..."):
@@ -2293,7 +2330,8 @@ elif _app_mode == "Big Deals":
                     st.session_state.history_sha = new_sha
                     st.session_state.bd_ready_to_confirm = False
                     st.success(
-                        f"🎉 Big Deals Batch **#{int(bd_batch_number)}** for **{bd_rp}** confirmed! "
+                        f"🎉 Big Deals Batch **#{int(bd_batch_number)}** for **{bd_rp}** confirmed "
+                        f"under **BigDeals_{bd_rp}**! "
                         f"**{len(bd_final)} cases** registered on **{bd_delivery_date.strftime('%Y-%m-%d')}**."
                     )
                     st.rerun()
