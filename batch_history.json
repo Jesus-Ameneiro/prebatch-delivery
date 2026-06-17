@@ -3835,5 +3835,36 @@
         ]
       ]
     }
+  ],
+  "BigDeals_CS": [
+    {
+      "batch_number": 1,
+      "delivery_date": "2026-06-17",
+      "region": "CS",
+      "profile": "Big Deals (15+ machines)",
+      "total_cases": 5,
+      "cases": [
+        [
+          "1750170#2",
+          "Falabella de Colombia S.A."
+        ],
+        [
+          "484697#1",
+          "Banco de Chile"
+        ],
+        [
+          "1614215#1,717878#2,925979#1",
+          "Saga Falabella S.A."
+        ],
+        [
+          "886247#1",
+          "Falabella.com S.A.C. Peru"
+        ],
+        [
+          "1676785#1,1676785#1",
+          "FALABELLA S.A. Chile"
+        ]
+      ]
+    }
   ]
 }
