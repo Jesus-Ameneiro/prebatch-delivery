@@ -2128,8 +2128,16 @@
       "delivery_date": "2026-06-22",
       "region": "MCC",
       "profile": "Standard MCC · 🟡 Batch Traditional",
-      "total_cases": 118,
+      "total_cases": 120,
       "cases": [
+        [
+          "4631039#1",
+          "MecanoCNC Guatemala"
+        ],
+        [
+          "4628297#1",
+          "Galyam Panama SA"
+        ],
         [
           "4635057#1",
           "Repuestos Maldonado"
@@ -2213,6 +2221,10 @@
         [
           "4570421#1,2064954#1",
           "LSD Laboratory Sustaining Design"
+        ],
+        [
+          "4532350#1,4532350#1",
+          "Planificacion Europea TGA"
         ],
         [
           "4609740#1",
@@ -2367,14 +2379,6 @@
           "Obregon Coconut Company Ltd"
         ],
         [
-          "4631039#1",
-          "MecanoCNC Guatemala"
-        ],
-        [
-          "4628297#1",
-          "Galyam Panama SA"
-        ],
-        [
           "4374285#1",
           "AR Arquitecto"
         ],
@@ -2521,6 +2525,10 @@
         [
           "455250#1",
           "Rendera"
+        ],
+        [
+          "4442663#1",
+          "Belize Public Utilities Commission"
         ],
         [
           "4485567#1",
