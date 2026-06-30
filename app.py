@@ -396,7 +396,6 @@ def _init_state():
         # Delivery history (persistent via GitHub)
         "delivery_history": {"MCC": [], "CS": [], "BigDeals_MCC": [], "BigDeals_CS": []},
         "history_sha": None,
-        "history_loaded": False,
         "history_load_msg": "",
         "history_load_ok": False,
         # Validation gate
@@ -422,46 +421,65 @@ def _init_state():
 
 _init_state()
 
-# Load delivery history from GitHub once per session
-if not st.session_state.history_loaded:
-    history, sha, err = load_history_from_github()
-    if err:
-        st.session_state.history_load_ok = False
-        st.session_state.history_load_msg = f"⚠️ Could not load batch history from GitHub: {err}"
-    else:
-        st.session_state.delivery_history = history or {"MCC": [], "CS": [], "BigDeals_MCC": [], "BigDeals_CS": []}
-        # Ensure BigDeals keys exist even in older history files
-        for _key in ("BigDeals_MCC", "BigDeals_CS"):
-            st.session_state.delivery_history.setdefault(_key, [])
-        st.session_state.history_sha = sha
-        st.session_state.history_load_ok = True
-        total = len(st.session_state.delivery_history.get("MCC", [])) + \
-                len(st.session_state.delivery_history.get("CS", []))
-        bd_total = len(st.session_state.delivery_history.get("BigDeals_MCC", [])) + \
-                   len(st.session_state.delivery_history.get("BigDeals_CS", []))
-        st.session_state.history_load_msg = (
-            f"✅ Batch history loaded — "
-            f"MCC: {len(st.session_state.delivery_history.get('MCC', []))} batch(es) · "
-            f"CS: {len(st.session_state.delivery_history.get('CS', []))} batch(es)"
-            + (f" · Big Deals MCC: {len(st.session_state.delivery_history.get('BigDeals_MCC', []))} · "
-               f"Big Deals CS: {len(st.session_state.delivery_history.get('BigDeals_CS', []))}"
-               if bd_total > 0 else "")
-        )
-    st.session_state.history_loaded = True
+
+# ──────────────────────────────────────────────
+# GitHub History — Cached Fetch (no one-shot flag)
+# ──────────────────────────────────────────────
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _fetch_github_history():
+    """Fetch batch_history.json. Cached 5 min, shared across sessions."""
+    return load_history_from_github()
+
+
+def _apply_history(history, sha):
+    data = history or {"MCC": [], "CS": [], "BigDeals_MCC": [], "BigDeals_CS": []}
+    for k in ("BigDeals_MCC", "BigDeals_CS"):
+        data.setdefault(k, [])
+    st.session_state.delivery_history = data
+    st.session_state.history_sha = sha
+    bd_total = (len(data.get("BigDeals_MCC", [])) + len(data.get("BigDeals_CS", [])))
+    st.session_state.history_load_ok = True
+    st.session_state.history_load_msg = (
+        f"✅ Batch history loaded — "
+        f"MCC: {len(data.get('MCC', []))} batch(es) · "
+        f"CS: {len(data.get('CS', []))} batch(es)"
+        + (f" · Big Deals MCC: {len(data.get('BigDeals_MCC', []))} · "
+           f"Big Deals CS: {len(data.get('BigDeals_CS', []))}"
+           if bd_total > 0 else "")
+    )
+
+
+# Run on every render — cache keeps it fast, TTL keeps it fresh
+_hist_data, _hist_sha, _hist_err = _fetch_github_history()
+if _hist_err:
+    st.session_state.history_load_ok = False
+    st.session_state.history_load_msg = f"⚠️ Could not load batch history from GitHub: {_hist_err}"
+else:
+    _apply_history(_hist_data, _hist_sha)
 
 
 # ──────────────────────────────────────────────
 # History Load Status Banner
 # ──────────────────────────────────────────────
 if st.session_state.history_load_ok:
-    st.success(st.session_state.history_load_msg)
+    _b_col, _r_col = st.columns([6, 1])
+    with _b_col:
+        st.success(st.session_state.history_load_msg)
+    with _r_col:
+        if st.button("🔄", key="reload_history_btn", help="Force reload history from GitHub"):
+            _fetch_github_history.clear()
+            st.rerun()
 else:
     st.warning(st.session_state.history_load_msg)
+    _rc1, _rc2 = st.columns([5, 1])
+    with _rc2:
+        if st.button("🔄 Retry", key="retry_history_btn", help="Retry loading from GitHub"):
+            _fetch_github_history.clear()
+            st.rerun()
     with st.expander("🔧 GitHub Connection Diagnostics", expanded=True):
-        _diag = diagnose_github()
-        for label, ok, detail in _diag:
-            icon = "✅" if ok else "❌"
-            st.markdown(f"{icon} **{label}** — {detail}")
+        for label, ok, detail in diagnose_github():
+            st.markdown(f"{'✅' if ok else '❌'} **{label}** — {detail}")
 
 
 # ──────────────────────────────────────────────
@@ -572,6 +590,7 @@ with st.sidebar:
                     )
                     if ok:
                         st.session_state.history_sha = new_sha
+                        _fetch_github_history.clear()  # bust cache so next render is fresh
                         st.toast(f"✅ Batch #{target_num} deleted from {reg}.", icon="✅")
                         st.rerun()
                     else:
@@ -624,6 +643,7 @@ with st.sidebar:
                         )
                         if ok:
                             st.session_state.history_sha = new_sha
+                            _fetch_github_history.clear()  # bust cache so next render is fresh
                             st.toast(f"✅ Big Deals Batch #{target_num} deleted from {reg}.", icon="✅")
                             st.rerun()
                         else:
@@ -2159,6 +2179,7 @@ if _app_mode == "Standard Batch":
                     )
                 if ok:
                     st.session_state.history_sha = new_sha
+                    _fetch_github_history.clear()  # bust cache so next render is fresh
                     st.session_state.prebatch_ready_to_confirm = False
                     if st.session_state.generation_log:
                         last = st.session_state.generation_log[-1]
@@ -2472,6 +2493,7 @@ elif _app_mode == "Big Deals":
                     )
                 if ok:
                     st.session_state.history_sha = new_sha
+                    _fetch_github_history.clear()  # bust cache so next render is fresh
                     st.session_state.bd_ready_to_confirm = False
                     st.success(
                         f"🎉 Big Deals Batch **#{int(bd_batch_number)}** for **{bd_rp}** confirmed "
