@@ -552,6 +552,30 @@ with st.sidebar:
                             pd.DataFrame(cases, columns=["Case ID", "Entity Name"]),
                             use_container_width=True, hide_index=True, height=180,
                         )
+            # Delete a batch
+            with st.expander("🗑 Delete a batch", expanded=False):
+                batch_options = {
+                    f"#{b.get('batch_number','?')} · {b.get('delivery_date','?')} · {b.get('total_cases',0)} cases": b.get('batch_number')
+                    for b in batches
+                }
+                del_sel = st.selectbox("Select batch to delete", options=list(batch_options.keys()),
+                                       key=f"del_sel_{reg}")
+                del_confirm = st.checkbox(f"Confirm delete", key=f"del_chk_{reg}")
+                if st.button("🗑 Delete", key=f"del_btn_{reg}",
+                             use_container_width=True, disabled=not del_confirm):
+                    target_num = batch_options[del_sel]
+                    st.session_state.delivery_history[reg] = [
+                        b for b in batches if b.get("batch_number") != target_num
+                    ]
+                    ok, err, new_sha = save_history_to_github(
+                        st.session_state.delivery_history, st.session_state.history_sha
+                    )
+                    if ok:
+                        st.session_state.history_sha = new_sha
+                        st.toast(f"✅ Batch #{target_num} deleted from {reg}.", icon="✅")
+                        st.rerun()
+                    else:
+                        st.error(f"GitHub save failed: {err}")
         else:
             st.caption(f"{reg}: No deliveries confirmed yet.")
 
@@ -580,6 +604,30 @@ with st.sidebar:
                                 pd.DataFrame(cases, columns=["Case ID", "Entity Name"]),
                                 use_container_width=True, hide_index=True, height=180,
                             )
+                # Delete a Big Deals batch
+                with st.expander("🗑 Delete a Big Deals batch", expanded=False):
+                    bd_options = {
+                        f"#{b.get('batch_number','?')} · {b.get('delivery_date','?')} · {b.get('total_cases',0)} cases": b.get('batch_number')
+                        for b in batches
+                    }
+                    bd_del_sel = st.selectbox("Select batch to delete", options=list(bd_options.keys()),
+                                              key=f"del_sel_{bd_key}")
+                    bd_del_confirm = st.checkbox("Confirm delete", key=f"del_chk_{bd_key}")
+                    if st.button("🗑 Delete", key=f"del_btn_{bd_key}",
+                                 use_container_width=True, disabled=not bd_del_confirm):
+                        target_num = bd_options[bd_del_sel]
+                        st.session_state.delivery_history[bd_key] = [
+                            b for b in batches if b.get("batch_number") != target_num
+                        ]
+                        ok, err, new_sha = save_history_to_github(
+                            st.session_state.delivery_history, st.session_state.history_sha
+                        )
+                        if ok:
+                            st.session_state.history_sha = new_sha
+                            st.toast(f"✅ Big Deals Batch #{target_num} deleted from {reg}.", icon="✅")
+                            st.rerun()
+                        else:
+                            st.error(f"GitHub save failed: {err}")
     st.markdown('<hr style="margin:1.2rem 0 0.8rem 0;border:none;border-top:1px solid #3A3A3A;">', unsafe_allow_html=True)
 
     # ── Session Generation Log ──
