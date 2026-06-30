@@ -10,7 +10,8 @@ import urllib.error
 import urllib.parse
 from io import BytesIO
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, date
+import calendar
 
 # ──────────────────────────────────────────────
 # Page Configuration
@@ -401,7 +402,10 @@ def _init_state():
         # Validation gate
         "batch_validated": False,
         "validation_warnings": [],
+        "validation_excluded": [],
+        "validation_excl_msgs": [],
         "validation_clean": False,
+        "excluded_count": 0,
         # App mode
         "app_mode": "Standard Batch",
         # Big Deals state
@@ -681,6 +685,7 @@ else:
 if st.session_state.get("_last_region") != region_code:
     st.session_state.batch_validated = False
     st.session_state.validation_warnings = []
+    st.session_state.validation_excluded = []
     st.session_state.validation_clean = False
     st.session_state.prebatch_ready_to_confirm = False
     st.session_state.bd_result_df = None
@@ -892,34 +897,93 @@ def generate_id_strings(ids: list, chunk_size: int = 100) -> list:
 # Batch History Validation
 # ──────────────────────────────────────────────
 
+def normalize_case_id(case_id: str) -> str:
+    """Sort sub-IDs alphabetically so order never affects comparison."""
+    parts = sorted(c.strip() for c in case_id.split(",") if c.strip())
+    return ",".join(parts)
+
+
+def six_months_ago() -> date:
+    """Return today minus exactly 6 months."""
+    today = date.today()
+    month = today.month - 6
+    year  = today.year
+    if month <= 0:
+        month += 12
+        year  -= 1
+    max_day = calendar.monthrange(year, month)[1]
+    return date(year, month, min(today.day, max_day))
+
+
 def validate_against_history(case_ids: list, region: str):
     """
-    Check whether any of the given Case IDs were previously delivered
-    in either standard batches or Big Deals batches for this region.
-    Returns (warnings list, is_clean bool).
+    Check Case IDs against delivery history (Standard + Big Deals).
+
+    Rules:
+    - Delivered within the last 6 months → EXCLUDED from generation (returned in excluded_ids).
+    - Delivered more than 6 months ago   → WARNING only (can still be generated).
+    - Sub-ID order is normalised before comparison.
+
+    Returns:
+        excluded_ids  — set of normalised Case IDs to auto-remove at generation
+        excluded_msgs — human-readable lines for the excluded group
+        warning_msgs  — human-readable lines for the eligible-but-repeated group
+        is_clean      — True when both excluded and warnings are empty
     """
-    delivered_ids = {}
-    # Check both standard and Big Deals history for this region
+    cutoff = six_months_ago()
+
+    # Build lookup: normalised_case_id → (batch_num, delivery_date, batch_type)
+    delivered: dict = {}
     for hist_key in [region, f"BigDeals_{region}"]:
         for batch in st.session_state.delivery_history.get(hist_key, []):
-            batch_num  = batch.get("batch_number", "?")
-            batch_date = batch.get("delivery_date", "?")
-            batch_type = "Big Deals" if hist_key.startswith("BigDeals_") else "Standard"
+            b_num  = batch.get("batch_number", "?")
+            b_date = batch.get("delivery_date", "?")
+            b_type = "Big Deals" if hist_key.startswith("BigDeals_") else "Standard"
             for case in batch.get("cases", []):
-                cid = case[0] if isinstance(case, (list, tuple)) else case.get("case_id", "")
-                delivered_ids[cid] = (batch_num, batch_date, batch_type)
+                raw_cid = case[0] if isinstance(case, (list, tuple)) else case.get("case_id", "")
+                norm    = normalize_case_id(raw_cid)
+                # Keep the most recent delivery if a case appears in multiple batches
+                if norm not in delivered:
+                    delivered[norm] = (b_num, b_date, b_type)
+                else:
+                    existing_date = delivered[norm][1]
+                    if b_date > existing_date:
+                        delivered[norm] = (b_num, b_date, b_type)
 
-    warnings = []
+    excluded_ids:  set  = set()
+    excluded_msgs: list = []
+    warning_msgs:  list = []
+
     for cid in case_ids:
-        sub_ids = [c.strip() for c in cid.split(",") if c.strip()]
-        for sub in sub_ids:
-            if sub in delivered_ids:
-                b_num, b_date, b_type = delivered_ids[sub]
-                warnings.append(
-                    f"**{sub}** was previously delivered in {b_type} Batch **#{b_num}** on {b_date}."
-                )
+        norm = normalize_case_id(cid)
+        if norm not in delivered:
+            continue
+        b_num, b_date, b_type = delivered[norm]
 
-    return warnings, len(warnings) == 0
+        # Parse delivery date for 6-month comparison
+        try:
+            delivered_on = datetime.strptime(b_date, "%Y-%m-%d").date()
+        except ValueError:
+            delivered_on = None
+
+        if delivered_on and delivered_on >= cutoff:
+            # Within 6 months → exclude from generation
+            excluded_ids.add(norm)
+            months_since = (date.today().year - delivered_on.year) * 12 + \
+                           (date.today().month - delivered_on.month)
+            excluded_msgs.append(
+                f"🚫 **{cid}** — delivered {months_since}mo ago in {b_type} Batch "
+                f"**#{b_num}** on {b_date}. **Automatically excluded** (within 6-month window)."
+            )
+        else:
+            # Older than 6 months → warn but allow
+            warning_msgs.append(
+                f"⚠️ **{cid}** — previously delivered in {b_type} Batch "
+                f"**#{b_num}** on {b_date}. Eligible for relaunch (older than 6 months)."
+            )
+
+    is_clean = not excluded_ids and not warning_msgs
+    return excluded_ids, excluded_msgs, warning_msgs, is_clean
 
 
 # ──────────────────────────────────────────────
@@ -931,8 +995,12 @@ def process_data(qs_df, pl_df, cc_df, region_code):
     cc_lookup = build_lookup(cc_df, "Case ID")
     pl_lookup = build_lookup(pl_df, "External Case ID")
 
+    # Cases to exclude due to 6-month window (set of normalised IDs)
+    excluded_norm = st.session_state.get("validation_excluded", set())
+
     output_rows, unmatched_cases, grouped_cases = [], [], []
     seen_case_ids, duplicate_cases = {}, []
+    excluded_count = 0
 
     for idx, (_, qs_row) in enumerate(qs_df.iterrows()):
         case_id_raw = str(qs_row.get("Case ID","")).strip()
@@ -942,6 +1010,11 @@ def process_data(qs_df, pl_df, cc_df, region_code):
             duplicate_cases.append(case_id_raw)
             continue
         seen_case_ids[case_id_raw] = idx
+
+        # Skip cases excluded by the 6-month window
+        if normalize_case_id(case_id_raw) in excluded_norm:
+            excluded_count += 1
+            continue
 
         case_ids = [c.strip() for c in case_id_raw.split(",") if c.strip()]
         if not case_ids: continue
@@ -994,7 +1067,7 @@ def process_data(qs_df, pl_df, cc_df, region_code):
 
     target_cols = MCC_COLUMNS if region_code == "MCC" else CS_COLUMNS
     result_df = pd.DataFrame(output_rows, columns=target_cols)
-    return result_df, unmatched_cases, grouped_cases, duplicate_cases
+    return result_df, unmatched_cases, grouped_cases, duplicate_cases, excluded_count
 
 
 # ──────────────────────────────────────────────
@@ -1745,12 +1818,17 @@ if _app_mode == "Standard Batch":
                         str(v).strip() for v in qs_temp.get("Case ID", qs_temp.iloc[:, 0])
                         if str(v).strip() and str(v).strip().lower() != "nan"
                     ]
-                    warnings_hist, is_clean = validate_against_history(case_ids_to_validate, region_code)
-                    st.session_state.validation_warnings = warnings_hist
-                    st.session_state.validation_clean = is_clean
-                    st.session_state.batch_validated = True
+                    excl_ids, excl_msgs, warn_msgs, is_clean = validate_against_history(
+                        case_ids_to_validate, region_code
+                    )
+                    st.session_state.validation_excluded = excl_ids
+                    st.session_state.validation_warnings = warn_msgs
+                    st.session_state.validation_clean    = is_clean
+                    st.session_state.batch_validated     = True
                     st.session_state.prebatch_ready_to_confirm = False
                     st.session_state.result_df = None
+                    # Store excluded messages separately for display
+                    st.session_state.validation_excl_msgs = excl_msgs
                 except Exception as e:
                     st.error(f"Validation error: {e}")
 
@@ -1766,13 +1844,14 @@ if _app_mode == "Standard Batch":
                          disabled=generate_disabled, help=generate_help):
                 with st.spinner("Processing files..."):
                     try:
-                        raw_df, unmatched, grouped, duplicates = process_data(
+                        raw_df, unmatched, grouped, duplicates, excluded_ct = process_data(
                             qs_df_v, pl_df_v, cc_df_v, region_code
                         )
-                        st.session_state.raw_df        = raw_df
-                        st.session_state.unmatched     = unmatched
-                        st.session_state.grouped       = grouped
-                        st.session_state.duplicates    = duplicates
+                        st.session_state.raw_df          = raw_df
+                        st.session_state.unmatched       = unmatched
+                        st.session_state.grouped         = grouped
+                        st.session_state.duplicates      = duplicates
+                        st.session_state.excluded_count  = excluded_ct
                         st.session_state.region_processed = region_code
                         st.session_state.dist_report   = None
                         st.session_state.dist_warnings = []
@@ -1813,21 +1892,36 @@ if _app_mode == "Standard Batch":
 
         # ── Validation Result Display ──
         if st.session_state.batch_validated:
+            excl_ids  = st.session_state.get("validation_excluded", set())
+            excl_msgs = st.session_state.get("validation_excl_msgs", [])
+            warn_msgs = st.session_state.get("validation_warnings", [])
+
             if st.session_state.validation_clean:
                 st.success(
                     "✅ **Batch validated — No repeated Case IDs found.** "
-                    "All cases in this batch are new to the delivery history. "
-                    "You may now generate the Prebatch file."
+                    "All cases are new to the delivery history. You may now generate the Prebatch file."
                 )
             else:
-                st.warning(
-                    f"⚠️ **{len(st.session_state.validation_warnings)} previously delivered Case ID(s) detected.** "
-                    "This is a warning only — you can still generate the Prebatch file. "
-                    "These cases may be relaunches or recontacts."
-                )
-                with st.expander(f"View {len(st.session_state.validation_warnings)} repeated Case ID(s)", expanded=False):
-                    for w in st.session_state.validation_warnings:
-                        st.markdown(f"- {w}")
+                if excl_ids:
+                    st.error(
+                        f"🚫 **{len(excl_ids)} case(s) automatically excluded** — "
+                        f"delivered within the last 6 months. They will be removed from the output."
+                    )
+                    with st.expander(f"View {len(excl_msgs)} excluded case(s)", expanded=True):
+                        for m in excl_msgs:
+                            st.markdown(f"- {m}")
+
+                if warn_msgs:
+                    st.warning(
+                        f"⚠️ **{len(warn_msgs)} case(s) previously delivered but eligible** — "
+                        f"delivered more than 6 months ago. Included as relaunch/recontact."
+                    )
+                    with st.expander(f"View {len(warn_msgs)} eligible relaunch case(s)", expanded=False):
+                        for w in warn_msgs:
+                            st.markdown(f"- {w}")
+
+                if excl_ids:
+                    st.info("Generate is available — excluded cases will be automatically removed from the output.")
 
     else:
         missing = [n for f, n in [(qs_files,"QS Delivery ID"),(pl_file,"PL Batch"),(pc_file,"Conflict Check")] if not f]
@@ -1870,17 +1964,19 @@ if _app_mode == "Standard Batch":
                         delta_color="normal" if grp["shortfall"] == 0 else "inverse",
                     )
 
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Cases in Prebatch",  len(result_df))
-            m2.metric("Total Available",    len(raw_df))
-            m3.metric("Backlog",            dist_report.get("total_backlog", 0))
-            m4.metric("Duplicates Removed", len(st.session_state.duplicates))
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("Cases in Prebatch",       len(result_df))
+            m2.metric("Total Available",          len(raw_df))
+            m3.metric("Backlog",                  dist_report.get("total_backlog", 0))
+            m4.metric("Duplicates Removed",       len(st.session_state.duplicates))
+            m5.metric("Excluded (6-mo) 🚫",       st.session_state.get("excluded_count", 0))
         else:
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Total Cases",        len(result_df))
-            m2.metric("Grouped Entities",   len(st.session_state.grouped))
-            m3.metric("Unmatched",          len(st.session_state.unmatched))
-            m4.metric("Duplicates Removed", len(st.session_state.duplicates))
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("Total Cases",              len(result_df))
+            m2.metric("Grouped Entities",         len(st.session_state.grouped))
+            m3.metric("Unmatched",                len(st.session_state.unmatched))
+            m4.metric("Duplicates Removed",       len(st.session_state.duplicates))
+            m5.metric("Excluded (6-mo) 🚫",       st.session_state.get("excluded_count", 0))
 
         # ── Diagnostics ──
         dcols = st.columns(3)
