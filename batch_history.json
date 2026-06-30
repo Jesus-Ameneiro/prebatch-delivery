@@ -5269,6 +5269,495 @@
           "Tiendas 3B"
         ]
       ]
+    },
+    {
+      "batch_number": 56,
+      "delivery_date": "2026-06-30",
+      "region": "CS",
+      "profile": "Standard CS · 🟡 Batch Traditional",
+      "total_cases": 120,
+      "cases": [
+        [
+          "4531902#1",
+          "Escuela de Ingenieros Militares."
+        ],
+        [
+          "4575388#1",
+          "Inercia BA"
+        ],
+        [
+          "1231932#1",
+          "Mobilia Industrial SAC"
+        ],
+        [
+          "4582303#1",
+          "FERED COMPANY S.A.S"
+        ],
+        [
+          "4605804#1",
+          "Mdelazerda"
+        ],
+        [
+          "4532940#1,1008119#1",
+          "CSI INGENIEROS"
+        ],
+        [
+          "4649249#1",
+          "Sasson Zajac Arquitectura"
+        ],
+        [
+          "4600140#1",
+          "Desmart LTDA"
+        ],
+        [
+          "4649748#1",
+          "Bioquifar Pharmaceutica S.A."
+        ],
+        [
+          "4643091#1",
+          "Mita Design Studio"
+        ],
+        [
+          "4578394#1",
+          "Elevadores Sudamericanos SAC"
+        ],
+        [
+          "4549155#1",
+          "Mariatti Medios SRL"
+        ],
+        [
+          "1037404#1",
+          "DESIGN INGENIERÍA Y CONSTRUCCIÓN S.A.C."
+        ],
+        [
+          "4647140#1",
+          "Grupo Gillibrand"
+        ],
+        [
+          "4649123#1",
+          "RR Proingenieria SAS"
+        ],
+        [
+          "4649109#1",
+          "Disenca Construcciones S.A.S"
+        ],
+        [
+          "4647322#1,4512770#1",
+          "MOBIN MOBILIARIO INTERIOR S.A.S."
+        ],
+        [
+          "4647554#1",
+          "Metal Mining SpA"
+        ],
+        [
+          "4631361#1",
+          "Gualco S.A"
+        ],
+        [
+          "4575414#1",
+          "SKM Industrial Ltda."
+        ],
+        [
+          "4621674#1",
+          "SIMA INGENIEROS S.A.S."
+        ],
+        [
+          "4530178#1",
+          "Luster Viz"
+        ],
+        [
+          "4594009#1",
+          "Mobilya Chile"
+        ],
+        [
+          "4529350#1,1478463#1",
+          "DC Mobiliario"
+        ],
+        [
+          "4606574#1",
+          "P&M ENGINEERING AND SOLUTIONS S.A.S"
+        ],
+        [
+          "4597347#1",
+          "Enconyser SRL"
+        ],
+        [
+          "4643053#1",
+          "Comercial Figaro Limitada"
+        ],
+        [
+          "4531535#1",
+          "Pinar Ingenieria y Arquitectura"
+        ],
+        [
+          "4592208#1",
+          "Piedras Finas Ecuador"
+        ],
+        [
+          "4529632#1",
+          "Doc Plast Industries S.R.L"
+        ],
+        [
+          "4545884#1",
+          "BGS Ingeniería Hidráulica"
+        ],
+        [
+          "4647508#1",
+          "RGC Soluciones Tecnológicas S.A"
+        ],
+        [
+          "4646475#1",
+          "Kallpa Constructora"
+        ],
+        [
+          "4639757#1",
+          "Muebles Peumayen"
+        ],
+        [
+          "4641411#1",
+          "TapiaJacobs Group"
+        ],
+        [
+          "4575375#1",
+          "Kit Comercial"
+        ],
+        [
+          "4626452#1",
+          "DOOMO Bienes Raices"
+        ],
+        [
+          "4530389#1",
+          "Matriz Creativa Ltda"
+        ],
+        [
+          "4529301#1",
+          "Cemply S.A"
+        ],
+        [
+          "4456382#1",
+          "Moreno Sosa Arquitectos"
+        ],
+        [
+          "4499543#1",
+          "MDOS Consultores"
+        ],
+        [
+          "4462867#1",
+          "Grupo Solutions"
+        ],
+        [
+          "1158775#1",
+          "ZONA M PROYECTOS S.A.S."
+        ],
+        [
+          "4529979#1",
+          "OMNITRACS SUDAMERICA S.A."
+        ],
+        [
+          "4538555#1",
+          "Br3 Ascensores S.A.S"
+        ],
+        [
+          "4581268#1",
+          "Sofía Benza | Arquitecta de Paisajes"
+        ],
+        [
+          "4424777#1,579878#1",
+          "Aquino+"
+        ],
+        [
+          "4546938#1",
+          "InfinityHome"
+        ],
+        [
+          "4646330#1,4383345#1",
+          "MAMPE"
+        ],
+        [
+          "4645939#1",
+          "Eve-Move™"
+        ],
+        [
+          "4534866#1",
+          "Centro de Capacitación Técnica"
+        ],
+        [
+          "4652244#1",
+          "Arqtis Studio"
+        ],
+        [
+          "4652245#1,960925#1",
+          "DF Arquitectura & Asociados"
+        ],
+        [
+          "2188326#1,4400456#1",
+          "ML Miron S.A."
+        ],
+        [
+          "742691#2",
+          "DEMEM S.A."
+        ],
+        [
+          "745160#1",
+          "Medios Publicitarios Peru SAC"
+        ],
+        [
+          "4541708#1",
+          "Grupo Bonnett S.A."
+        ],
+        [
+          "2407844#1",
+          "Creamos Valor SAC"
+        ],
+        [
+          "1075838#1",
+          "Morgenstern Inmobiliaria"
+        ],
+        [
+          "2312599#1",
+          "Gmóvil S.A.S."
+        ],
+        [
+          "4513971#1",
+          "Nómena Arquitectura"
+        ],
+        [
+          "604278#1",
+          "Tecnica Ingenieros S.R.L."
+        ],
+        [
+          "2951615#1",
+          "Ihan Arquitectos"
+        ],
+        [
+          "3563702#1",
+          "gabel corredores de seguros s.a.c"
+        ],
+        [
+          "4569308#1",
+          "Corporación Aldes S.A.C."
+        ],
+        [
+          "3052881#1",
+          "HVM Ingeniería y Topografía"
+        ],
+        [
+          "4297278#1",
+          "Imprenta Gráfica Universal"
+        ],
+        [
+          "4504837#1",
+          "VIVA Negocio Inmobiliario"
+        ],
+        [
+          "3888956#1",
+          "COMPAÑÍA MINERA CARAVELI S.A.C."
+        ],
+        [
+          "1444315#1",
+          "Ambercrest Proyectos"
+        ],
+        [
+          "2219980#1",
+          "AGAVE - Paisajismo y Botánica"
+        ],
+        [
+          "743190#2",
+          "Consorcio Suyay II"
+        ],
+        [
+          "4551539#1",
+          "Publimatch S.A.C"
+        ],
+        [
+          "4513183#1",
+          "MUNNO Arquitectos"
+        ],
+        [
+          "1679178#1",
+          "Automation Service S.A.C."
+        ],
+        [
+          "1144515#1",
+          "G3 Consultores y Construcciones S.A.C"
+        ],
+        [
+          "3518409#1",
+          "M & K SERVICIOS ESPECIALIZADOS S.A.C"
+        ],
+        [
+          "4602259#1",
+          "Skedia"
+        ],
+        [
+          "4489179#1",
+          "ACL Soluciones"
+        ],
+        [
+          "4568377#1",
+          "Artetenick"
+        ],
+        [
+          "565242#1",
+          "Eco100arquitectos S.A.C."
+        ],
+        [
+          "1796714#1",
+          "CÁMARA DE EMPRESAS DE CONTROL Y ADMINISTRACIÓN DE INFRACCIONES DE TRÁNSITO DE LA REPÚBLICA ARGENTINA"
+        ],
+        [
+          "4602665#1",
+          "Salvatori S.A"
+        ],
+        [
+          "4488547#1",
+          "ARQUITECA E.I.R.L."
+        ],
+        [
+          "4643683#1",
+          "ESTUDIO EPUM"
+        ],
+        [
+          "4609804#1",
+          "Estudio Gesto Arquitectura"
+        ],
+        [
+          "4635812#1",
+          "INFRA ARQUITECTURA Y CONSTRUCCION LIMITADA"
+        ],
+        [
+          "4640012#1",
+          "Solnik S.A."
+        ],
+        [
+          "534414#1,4155265#1",
+          "Cronembold + Arquitectos"
+        ],
+        [
+          "1427537#1,446225#2",
+          "HUALCA INGENIEROS S.A.C."
+        ],
+        [
+          "1562728#1",
+          "Smurfit Kappa de Argentina S.A"
+        ],
+        [
+          "1414915#1",
+          "Arquicreativa"
+        ],
+        [
+          "4417950#1,304051#1,4225673#1,4298057#1,2072392#1",
+          "CONSTRUCTORA BOLÍVAR BOGOTÁ S.A."
+        ],
+        [
+          "4405941#1",
+          "HDH Ingeniería"
+        ],
+        [
+          "939725#1",
+          "AF Arquitectura"
+        ],
+        [
+          "4432303#1",
+          "Maderas JoEle"
+        ],
+        [
+          "2465612#1",
+          "PEVISO INGENIEROS S.A.C."
+        ],
+        [
+          "1431716#1",
+          "ArquiCon"
+        ],
+        [
+          "4455689#1",
+          "Three Point Six"
+        ],
+        [
+          "4461451#1",
+          "Dg Muebles e Ideas S.A.S"
+        ],
+        [
+          "3406449#1",
+          "Todo Acero"
+        ],
+        [
+          "3530170#1",
+          "PMD Arquitectura"
+        ],
+        [
+          "3256671#1",
+          "GMP Obras"
+        ],
+        [
+          "2984994#1",
+          "Esmet S.A"
+        ],
+        [
+          "2208664#1",
+          "Gauros Viviendas"
+        ],
+        [
+          "4362827#1",
+          "Ruleman Patagonia"
+        ],
+        [
+          "3123204#1,1797375#1",
+          "YouArq"
+        ],
+        [
+          "4393574#1",
+          "GALVASA S.A"
+        ],
+        [
+          "4405991#1",
+          "Mario Avalos Arquitectura & Feng Shui"
+        ],
+        [
+          "596204#1",
+          "BOLK Furniture"
+        ],
+        [
+          "1078880#1",
+          "Geotecnia y Cimientos S.A."
+        ],
+        [
+          "2919603#1",
+          "Santiago Losada & Asoc. | Estudio de Arquitectura"
+        ],
+        [
+          "1255756#1",
+          "Quo Marketing"
+        ],
+        [
+          "4372035#1",
+          "Distrito Perseverancia"
+        ],
+        [
+          "2279209#1",
+          "ROTESMA PARAGUAY S.A.I.C."
+        ],
+        [
+          "2290978#1",
+          "Agira S.A"
+        ],
+        [
+          "4505787#1,847086#1",
+          "Muro Studio"
+        ],
+        [
+          "4330300#1",
+          "Tecnomyl"
+        ],
+        [
+          "4461557#1",
+          "COMUNIDAD GRAFICO.COM"
+        ],
+        [
+          "2006002#2",
+          "RVC SERVICIOS SpA"
+        ]
+      ]
     }
   ],
   "BigDeals_CS": [
