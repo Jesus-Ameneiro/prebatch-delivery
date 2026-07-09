@@ -1,6 +1,47 @@
 {
   "MCC": [
     {
+      "batch_number": 8,
+      "delivery_date": "2026-07-08",
+      "region": "MCC",
+      "profile": "Standard MCC · 📊 Batch Standard",
+      "total_cases": 8,
+      "cases": [
+        [
+          "4410865#1",
+          "INACON SA de CV"
+        ],
+        [
+          "4642829#1",
+          "Rooftec"
+        ],
+        [
+          "4532909#1",
+          "Arquitectura Positiva Panama"
+        ],
+        [
+          "4583084#1",
+          "Trecediez Interiorismo"
+        ],
+        [
+          "4608318#1",
+          "ESPACIOS CORPORATIVOS INTELIGENTES SA DE CV"
+        ],
+        [
+          "4170621#1",
+          "PriceSmart"
+        ],
+        [
+          "484966#2",
+          "Studio HBS"
+        ],
+        [
+          "4516888#1",
+          "Grupo Intech"
+        ]
+      ]
+    },
+    {
       "batch_number": 61,
       "delivery_date": "2026-05-04",
       "region": "MCC",
