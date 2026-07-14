@@ -432,11 +432,32 @@ def _fetch_github_history():
     return load_history_from_github()
 
 
+def _full_payload() -> dict:
+    """
+    Build the complete JSON payload for GitHub:
+    delivery history  +  distribution profiles  +  distribution defaults.
+    Always use this instead of passing delivery_history directly.
+    """
+    payload = dict(st.session_state.delivery_history)
+    payload["dist_profiles"] = st.session_state.dist_profiles
+    payload["dist_defaults"] = st.session_state.dist_defaults
+    return payload
+
+
 def _apply_history(history, sha):
     data = history or {"MCC": [], "CS": [], "BigDeals_MCC": [], "BigDeals_CS": []}
     for k in ("BigDeals_MCC", "BigDeals_CS"):
         data.setdefault(k, [])
-    st.session_state.delivery_history = data
+
+    # Restore distribution profiles if stored (absent in older files → keep defaults)
+    if "dist_profiles" in data:
+        st.session_state.dist_profiles = data["dist_profiles"]
+    if "dist_defaults" in data:
+        st.session_state.dist_defaults = data["dist_defaults"]
+
+    # Strip profile keys before storing as delivery_history
+    delivery_keys = ("MCC", "CS", "BigDeals_MCC", "BigDeals_CS")
+    st.session_state.delivery_history = {k: data.get(k, []) for k in delivery_keys}
     st.session_state.history_sha = sha
     bd_total = (len(data.get("BigDeals_MCC", [])) + len(data.get("BigDeals_CS", [])))
     st.session_state.history_load_ok = True
@@ -586,7 +607,7 @@ with st.sidebar:
                         b for b in batches if b.get("batch_number") != target_num
                     ]
                     ok, err, new_sha = save_history_to_github(
-                        st.session_state.delivery_history, st.session_state.history_sha
+                        _full_payload(), st.session_state.history_sha
                     )
                     if ok:
                         st.session_state.history_sha = new_sha
@@ -639,7 +660,7 @@ with st.sidebar:
                             b for b in batches if b.get("batch_number") != target_num
                         ]
                         ok, err, new_sha = save_history_to_github(
-                            st.session_state.delivery_history, st.session_state.history_sha
+                            _full_payload(), st.session_state.history_sha
                         )
                         if ok:
                             st.session_state.history_sha = new_sha
@@ -1630,12 +1651,22 @@ if _app_mode == "Standard Batch":
                 st.success("Default ✓")
             else:
                 if st.button("Set as Default", key="set_default_btn", use_container_width=True):
-                    set_default(_rp_for_config, selected_profile_name); st.rerun()
+                    set_default(_rp_for_config, selected_profile_name)
+                    _ok, _err, _sha = save_history_to_github(_full_payload(), st.session_state.history_sha)
+                    if _ok:
+                        st.session_state.history_sha = _sha
+                        _fetch_github_history.clear()
+                    st.rerun()
         with del_col:
             st.markdown("<br>", unsafe_allow_html=True)
             if len(_region_profiles) > 1:
                 if st.button("🗑 Delete", key="del_profile_btn", use_container_width=True):
-                    delete_profile(_rp_for_config, selected_profile_name); st.rerun()
+                    delete_profile(_rp_for_config, selected_profile_name)
+                    _ok, _err, _sha = save_history_to_github(_full_payload(), st.session_state.history_sha)
+                    if _ok:
+                        st.session_state.history_sha = _sha
+                        _fetch_github_history.clear()
+                    st.rerun()
             else:
                 st.button("🗑 Delete", disabled=True, use_container_width=True, key="del_profile_dis")
 
@@ -1740,6 +1771,13 @@ if _app_mode == "Standard Batch":
                     save_profile(_rp_for_config, profile_to_save)
                     ep["_editing_name"] = profile_to_save["name"]
                     st.session_state["_pending_dist_select"] = profile_to_save["name"]
+                    # Persist profiles to GitHub
+                    _ok, _err, _sha = save_history_to_github(_full_payload(), st.session_state.history_sha)
+                    if _ok:
+                        st.session_state.history_sha = _sha
+                        _fetch_github_history.clear()
+                    else:
+                        st.warning(f"Profile saved locally but GitHub push failed: {_err}")
                     st.toast(f"✅ Profile **{profile_to_save['name']}** updated.", icon="✅")
                     st.rerun()
 
@@ -1755,13 +1793,18 @@ if _app_mode == "Standard Batch":
                         new_p = copy.deepcopy({k: v for k, v in ep.items() if not k.startswith("_")})
                         new_p["name"] = clean_name
                         save_profile(_rp_for_config, new_p)
-                        # Navigate dropdown to new profile and clear input
                         st.session_state["_pending_dist_select"] = clean_name
                         st.session_state["saveas_name"] = ""
-                        # Update editor to track the new profile
                         new_ep = copy.deepcopy(new_p)
                         new_ep["_editing_name"] = clean_name
                         st.session_state.editor_profile = new_ep
+                        # Persist profiles to GitHub
+                        _ok, _err, _sha = save_history_to_github(_full_payload(), st.session_state.history_sha)
+                        if _ok:
+                            st.session_state.history_sha = _sha
+                            _fetch_github_history.clear()
+                        else:
+                            st.warning(f"Profile saved locally but GitHub push failed: {_err}")
                         st.toast(f"✅ New profile **{clean_name}** created.", icon="✅")
                         st.rerun()
                     else:
@@ -1816,8 +1859,18 @@ if _app_mode == "Standard Batch":
                 with ic2:
                     chunk_size = st.number_input("IDs per string", min_value=10, max_value=500,
                                                   value=100, step=10, key="id_chunk_size")
-                ids = [str(v).strip() for v in df_id[id_col]
-                       if str(v).strip() and str(v).strip().lower() not in ("nan","none","")]
+                # Extract IDs — split each cell by comma, flatten, deduplicate (order-preserving)
+                seen_ids: dict = {}
+                for cell_val in df_id[id_col]:
+                    cell_str = str(cell_val).strip()
+                    if not cell_str or cell_str.lower() in ("nan", "none", ""):
+                        continue
+                    for sub in cell_str.split(","):
+                        sub = sub.strip()
+                        if sub and sub.lower() not in ("nan", "none", ""):
+                            seen_ids[sub] = None   # dict preserves insertion order
+                ids = list(seen_ids.keys())
+
                 if not ids:
                     st.warning("No valid IDs found in the selected column.")
                 else:
@@ -2175,7 +2228,7 @@ if _app_mode == "Standard Batch":
                 )
                 with st.spinner("Saving batch history to GitHub..."):
                     ok, err, new_sha = save_history_to_github(
-                        st.session_state.delivery_history, st.session_state.history_sha
+                        _full_payload(), st.session_state.history_sha
                     )
                 if ok:
                     st.session_state.history_sha = new_sha
@@ -2489,7 +2542,7 @@ elif _app_mode == "Big Deals":
                 )
                 with st.spinner("Saving to GitHub..."):
                     ok, err, new_sha = save_history_to_github(
-                        st.session_state.delivery_history, st.session_state.history_sha
+                        _full_payload(), st.session_state.history_sha
                     )
                 if ok:
                     st.session_state.history_sha = new_sha
