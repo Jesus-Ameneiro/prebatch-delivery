@@ -7346,7 +7346,7 @@
             "countries": [
               "Chile"
             ],
-            "quota": 20
+            "quota": 25
           },
           {
             "name": "Argentina",
@@ -7368,7 +7368,7 @@
             "countries": [
               "Peru"
             ],
-            "quota": 10
+            "quota": 15
           },
           {
             "name": "Uruguay · Bolivia · Paraguay",
