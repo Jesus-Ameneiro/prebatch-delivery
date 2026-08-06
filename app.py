@@ -1835,6 +1835,135 @@ if _app_mode == "Standard Batch":
 
 
     # ──────────────────────────────────────────────
+    # Confirm from Existing Prebatch File
+    # ──────────────────────────────────────────────
+    st.markdown("---")
+    with st.expander("📥 Confirm from Existing Prebatch File", expanded=False):
+        st.markdown(
+            "Use this if the app restarted after you already downloaded a Prebatch file. "
+            "Upload the file to confirm it directly without re-generating."
+        )
+        cf_upload = st.file_uploader(
+            "Upload Prebatch file (XLSX or CSV)",
+            type=["xlsx", "xls", "csv"],
+            key="confirm_from_file_upload",
+        )
+        if cf_upload is not None:
+            try:
+                cf_df = clean_df(read_file(cf_upload))
+
+                # Auto-detect region from column structure
+                if "Country" in cf_df.columns and "Countries" not in cf_df.columns:
+                    cf_region = "CS"
+                elif "Countries" in cf_df.columns:
+                    cf_region = "MCC"
+                else:
+                    cf_region = region_code  # fall back to active region
+
+                # Validate required columns
+                if "Case ID" not in cf_df.columns:
+                    st.error("File does not contain a 'Case ID' column. Please upload a valid Prebatch file.")
+                else:
+                    n_cases = len(cf_df)
+                    st.success(
+                        f"**{n_cases} cases** detected · Region auto-detected: **{cf_region}**"
+                    )
+                    st.dataframe(
+                        cf_df[["Case ID", "Entity Name"]].head(20) if "Entity Name" in cf_df.columns
+                        else cf_df[["Case ID"]].head(20),
+                        use_container_width=True, hide_index=True,
+                        height=min(35 * min(n_cases, 20) + 40, 380),
+                    )
+                    if n_cases > 20:
+                        st.caption(f"Showing first 20 of {n_cases} cases.")
+
+                    st.markdown("**Confirm this delivery:**")
+                    cf_col1, cf_col2 = st.columns(2)
+                    with cf_col1:
+                        cf_date = st.date_input(
+                            "Delivery Date", value=datetime.today(),
+                            key="cf_delivery_date",
+                        )
+                    with cf_col2:
+                        cf_suggested = next_batch_number(cf_region)
+                        cf_batch_num = st.number_input(
+                            "Batch Number", min_value=1,
+                            value=cf_suggested, step=1,
+                            key="cf_batch_number",
+                            help=f"Suggested: {cf_suggested} (last confirmed + 1 for {cf_region})",
+                        )
+
+                    cf_existing = [
+                        b.get("batch_number")
+                        for b in st.session_state.delivery_history.get(cf_region, [])
+                    ]
+                    cf_is_dup = int(cf_batch_num) in cf_existing
+                    if cf_is_dup:
+                        st.warning(
+                            f"⚠️ Batch **#{int(cf_batch_num)}** already exists for **{cf_region}**. "
+                            "Tick the checkbox to replace it."
+                        )
+                        cf_overwrite_ok = st.checkbox(
+                            f"Yes, replace Batch #{int(cf_batch_num)} for {cf_region}",
+                            key="cf_overwrite_chk",
+                        )
+                    else:
+                        cf_overwrite_ok = True
+
+                    st.caption(
+                        f"**{n_cases} cases** will be confirmed · "
+                        f"Profile: **Manual confirmation from file** · Region: **{cf_region}**"
+                    )
+
+                    if st.button(
+                        "✅ Confirm Delivery from File", type="primary",
+                        use_container_width=True, key="cf_confirm_btn",
+                        disabled=cf_is_dup and not cf_overwrite_ok,
+                    ):
+                        cf_entry = {
+                            "batch_number": int(cf_batch_num),
+                            "delivery_date": cf_date.strftime("%Y-%m-%d"),
+                            "region": cf_region,
+                            "profile": "Manual confirmation from file",
+                            "total_cases": n_cases,
+                            "cases": [
+                                [str(row["Case ID"]), str(row.get("Entity Name", ""))]
+                                for _, row in cf_df.iterrows()
+                            ],
+                        }
+                        cf_batches = st.session_state.delivery_history.setdefault(cf_region, [])
+                        replaced = False
+                        for i, b in enumerate(cf_batches):
+                            if b.get("batch_number") == int(cf_batch_num):
+                                cf_batches[i] = cf_entry
+                                replaced = True
+                                break
+                        if not replaced:
+                            cf_batches.append(cf_entry)
+                        st.session_state.delivery_history[cf_region] = sorted(
+                            cf_batches, key=lambda b: b.get("batch_number", 0)
+                        )
+                        with st.spinner("Saving to GitHub..."):
+                            ok, err, new_sha = save_history_to_github(
+                                _full_payload(), st.session_state.history_sha
+                            )
+                        if ok:
+                            st.session_state.history_sha = new_sha
+                            _fetch_github_history.clear()
+                            st.success(
+                                f"🎉 Batch **#{int(cf_batch_num)}** for **{cf_region}** confirmed from file! "
+                                f"**{n_cases} cases** registered on **{cf_date.strftime('%Y-%m-%d')}**."
+                            )
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Failed to save to GitHub: {err}")
+                            with st.expander("🔧 GitHub Diagnostics", expanded=True):
+                                for label, ok_c, detail in diagnose_github():
+                                    st.markdown(f"{'✅' if ok_c else '❌'} **{label}** — {detail}")
+            except Exception as e:
+                st.error(f"Error reading file: {e}")
+
+    # ──────────────────────────────────────────────
     # Delivery ID Search String Generator
     # ──────────────────────────────────────────────
     st.markdown("---")
