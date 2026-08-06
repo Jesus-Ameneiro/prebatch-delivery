@@ -9302,14 +9302,14 @@
             "countries": [
               "Chile"
             ],
-            "quota": 25
+            "quota": 20
           },
           {
             "name": "Argentina",
             "countries": [
               "Argentina"
             ],
-            "quota": 25
+            "quota": 10
           },
           {
             "name": "Colombia · Ecuador",
@@ -9317,14 +9317,14 @@
               "Colombia",
               "Ecuador"
             ],
-            "quota": 35
+            "quota": 40
           },
           {
             "name": "Peru",
             "countries": [
               "Peru"
             ],
-            "quota": 15
+            "quota": 20
           },
           {
             "name": "Uruguay · Bolivia · Paraguay",
@@ -9333,7 +9333,7 @@
               "Bolivia",
               "Paraguay"
             ],
-            "quota": 20
+            "quota": 10
           }
         ]
       }
