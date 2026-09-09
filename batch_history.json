@@ -12494,6 +12494,95 @@
           "Equifrigo"
         ]
       ]
+    },
+    {
+      "batch_number": 66,
+      "delivery_date": "2026-09-09",
+      "region": "CS",
+      "profile": "Standard CS · 📊 Batch Standard",
+      "total_cases": 20,
+      "cases": [
+        [
+          "3050953#1",
+          "Camarón Brujo"
+        ],
+        [
+          "4537934#1",
+          "Strategio Advisors S.A.C."
+        ],
+        [
+          "4598231#1",
+          "KHATZ CONSTRUCCIONES S.R.L."
+        ],
+        [
+          "4603212#1",
+          "Consucor"
+        ],
+        [
+          "4623888#1",
+          "INDUARQ INDUSTRIA & ARQUITECTURA"
+        ],
+        [
+          "4631195#1",
+          "ARQUILUXES S.A.S."
+        ],
+        [
+          "4643910#1",
+          "Gastronomía La Virgen SpA"
+        ],
+        [
+          "4651194#1",
+          "Proyecto71 Arquitectura y servicios"
+        ],
+        [
+          "4651388#1",
+          "Grupo Belator"
+        ],
+        [
+          "4651843#1",
+          "Constructora del este"
+        ],
+        [
+          "4653789#1",
+          "Betamotor Argentina S.A."
+        ],
+        [
+          "4653822#1",
+          "Operadora Internacional Aeropuerto de Cartagena S.A.S."
+        ],
+        [
+          "4665211#1",
+          "Ingeniería de Imágenes S.A."
+        ],
+        [
+          "4666214#1",
+          "Transportes Artisa Ltda."
+        ],
+        [
+          "4666249#1",
+          "Emax Fluid"
+        ],
+        [
+          "4668503#1",
+          "Brest energy"
+        ],
+        [
+          "4544253#1,4544253#1",
+          "Mateus Corp S.A.C."
+        ],
+        [
+          "4666803#1",
+          "Crea Constructora"
+        ],
+        [
+          "752254#2",
+          "INDUSTRIAS EL TREBOL S.A."
+        ],
+        [
+          "4657162#1,4497971#1,4497971#1,4657162#1",
+          "Sáyrun Amoblamientos S.A.S."
+        ]
+      ]
     }
   ],
   "BigDeals_MCC": [],
