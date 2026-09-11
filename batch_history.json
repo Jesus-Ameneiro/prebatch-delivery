@@ -13037,7 +13037,7 @@
             "countries": [
               "Mexico"
             ],
-            "quota": 50
+            "quota": 60
           },
           {
             "name": "Panama · Costa Rica · Dominicana",
@@ -13046,7 +13046,7 @@
               "Costa Rica",
               "Dominican Republic"
             ],
-            "quota": 40
+            "quota": 30
           },
           {
             "name": "Honduras · Belize · Guatemala · Nicaragua · El Salvador",
@@ -13057,7 +13057,7 @@
               "Nicaragua",
               "El Salvador"
             ],
-            "quota": 40
+            "quota": 30
           }
         ]
       }
