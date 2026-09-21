@@ -13641,14 +13641,14 @@
             "countries": [
               "Chile"
             ],
-            "quota": 20
+            "quota": 30
           },
           {
             "name": "Argentina",
             "countries": [
               "Argentina"
             ],
-            "quota": 10
+            "quota": 15
           },
           {
             "name": "Colombia · Ecuador",
@@ -13656,14 +13656,14 @@
               "Colombia",
               "Ecuador"
             ],
-            "quota": 40
+            "quota": 45
           },
           {
             "name": "Peru",
             "countries": [
               "Peru"
             ],
-            "quota": 20
+            "quota": 25
           },
           {
             "name": "Uruguay · Bolivia · Paraguay",
@@ -13672,7 +13672,7 @@
               "Bolivia",
               "Paraguay"
             ],
-            "quota": 10
+            "quota": 25
           }
         ]
       }
