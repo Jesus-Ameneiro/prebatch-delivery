@@ -405,6 +405,7 @@ def _init_state():
         "validation_excl_msgs": [],
         "validation_clean": False,
         "excluded_count": 0,
+        "sub_id_deduped": [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -853,9 +854,26 @@ def generate_id_strings(ids: list, chunk_size: int = 100) -> list:
 # Batch History Validation
 # ──────────────────────────────────────────────
 
+def normalize_sub_ids(case_id_raw: str) -> tuple:
+    """
+    Deduplicate sub-IDs within a comma-separated Case ID, preserving
+    first-occurrence order.
+
+    "4456084#1,4456084#1,4456084#1" → ("4456084#1", True)
+    "595983#1,595983#1,4610281#1"   → ("595983#1,4610281#1", True)
+    "4543813#1,4455925#1"           → ("4543813#1,4455925#1", False)
+
+    Returns (cleaned_string, was_changed).
+    """
+    parts  = [s.strip() for s in case_id_raw.split(",") if s.strip()]
+    deduped = list(dict.fromkeys(parts))
+    cleaned = ",".join(deduped)
+    return cleaned, (cleaned != case_id_raw.replace(" ", ""))
+
+
 def normalize_case_id(case_id: str) -> str:
-    """Sort sub-IDs alphabetically so order never affects comparison."""
-    parts = sorted(c.strip() for c in case_id.split(",") if c.strip())
+    """Deduplicate, then sort sub-IDs alphabetically for order-independent comparison."""
+    parts = sorted(set(c.strip() for c in case_id.split(",") if c.strip()))
     return ",".join(parts)
 
 
@@ -957,11 +975,18 @@ def process_data(qs_df, pl_df, cc_df, region_code):
     output_rows, unmatched_cases, grouped_cases = [], [], []
     seen_case_ids, duplicate_cases = {}, []
     excluded_count = 0
+    sub_id_deduped = []   # cases where sub-IDs were silently cleaned
 
     for idx, (_, qs_row) in enumerate(qs_df.iterrows()):
         case_id_raw = str(qs_row.get("Case ID","")).strip()
         if not case_id_raw or case_id_raw.lower() == "nan":
             continue
+
+        # Deduplicate sub-IDs before any further processing
+        case_id_raw, was_deduped = normalize_sub_ids(case_id_raw)
+        if was_deduped:
+            sub_id_deduped.append(case_id_raw)
+
         if case_id_raw in seen_case_ids:
             duplicate_cases.append(case_id_raw)
             continue
@@ -1023,7 +1048,7 @@ def process_data(qs_df, pl_df, cc_df, region_code):
 
     target_cols = MCC_COLUMNS if region_code == "MCC" else CS_COLUMNS
     result_df = pd.DataFrame(output_rows, columns=target_cols)
-    return result_df, unmatched_cases, grouped_cases, duplicate_cases, excluded_count
+    return result_df, unmatched_cases, grouped_cases, duplicate_cases, excluded_count, sub_id_deduped
 
 
 # ──────────────────────────────────────────────
@@ -1785,7 +1810,7 @@ if all_uploaded:
                      disabled=generate_disabled, help=generate_help):
             with st.spinner("Processing files..."):
                 try:
-                    raw_df, unmatched, grouped, duplicates, excluded_ct = process_data(
+                    raw_df, unmatched, grouped, duplicates, excluded_ct, deduped = process_data(
                         qs_df_v, pl_df_v, cc_df_v, region_code
                     )
                     st.session_state.raw_df          = raw_df
@@ -1793,6 +1818,7 @@ if all_uploaded:
                     st.session_state.grouped         = grouped
                     st.session_state.duplicates      = duplicates
                     st.session_state.excluded_count  = excluded_ct
+                    st.session_state.sub_id_deduped  = deduped
                     st.session_state.region_processed = region_code
                     st.session_state.dist_report   = None
                     st.session_state.dist_warnings = []
@@ -1920,7 +1946,7 @@ if st.session_state.result_df is not None:
         m5.metric("Excluded (6-mo) 🚫",       st.session_state.get("excluded_count", 0))
 
     # ── Diagnostics ──
-    dcols = st.columns(3)
+    dcols = st.columns(4)
     with dcols[0]:
         if st.session_state.unmatched:
             with st.expander(f"⚠ Unmatched ({len(st.session_state.unmatched)})"):
@@ -1936,6 +1962,12 @@ if st.session_state.result_df is not None:
             with st.expander(f"🚫 Duplicates Removed ({len(st.session_state.duplicates)})"):
                 st.caption("First occurrence kept.")
                 for c in st.session_state.duplicates: st.code(c)
+    with dcols[3]:
+        deduped_list = st.session_state.get("sub_id_deduped", [])
+        if deduped_list:
+            with st.expander(f"🔧 Sub-IDs Cleaned ({len(deduped_list)})"):
+                st.caption("Repeated sub-IDs deduplicated automatically.")
+                for c in deduped_list: st.code(c)
 
     # ── Full merge reference (only shown when distribution was applied) ──
     if dist_applied and raw_df is not None and len(raw_df) != len(result_df):
