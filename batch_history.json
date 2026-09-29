@@ -13561,36 +13561,573 @@
           "Goal Global Services S.A.C.."
         ]
       ]
-    }
-  ],
-  "BigDeals_MCC": [],
-  "BigDeals_CS": [
+    },
     {
-      "batch_number": 1,
-      "delivery_date": "2026-06-17",
+      "batch_number": 68,
+      "delivery_date": "2026-09-29",
       "region": "CS",
-      "profile": "Big Deals (15+ machines)",
-      "total_cases": 5,
+      "profile": "Standard CS · 🟡 Batch Traditional",
+      "total_cases": 140,
       "cases": [
         [
-          "1750170#2",
-          "Falabella de Colombia S.A."
+          "4634902#1",
+          "Gentile Inmuebles."
         ],
         [
-          "484697#1",
-          "Banco de Chile"
+          "4591470#1",
+          "Tratecni"
         ],
         [
-          "1614215#1,717878#2,925979#1",
-          "Saga Falabella S.A."
+          "4599351#1",
+          "Yamile Orozco Art"
         ],
         [
-          "886247#1",
-          "Falabella.com S.A.C. Peru"
+          "4670640#1",
+          "Icomsa"
         ],
         [
-          "1676785#1,1676785#1",
-          "FALABELLA S.A. Chile"
+          "4545580#1",
+          "Grupo Distri"
+        ],
+        [
+          "4484915#1",
+          "Diconstruc S.A.C"
+        ],
+        [
+          "4609481#1",
+          "Promec Chile SpA"
+        ],
+        [
+          "4647737#1",
+          "Rapividrios S.A.S."
+        ],
+        [
+          "4609490#1",
+          "Trekker Ingeniería SpA"
+        ],
+        [
+          "4622350#1",
+          "Kersting S.A."
+        ],
+        [
+          "4600970#1",
+          "Imprenta Copayapu"
+        ],
+        [
+          "4667734#1",
+          "Korn Desarrolla Real Estate & Construction Group"
+        ],
+        [
+          "4605309#1",
+          "Grupo VAAS"
+        ],
+        [
+          "4567315#1",
+          "Técnica Química Argentina S.A."
+        ],
+        [
+          "4669966#1",
+          "Bizlogit S.R.L."
+        ],
+        [
+          "4647739#1",
+          "Crearea S.A.C."
+        ],
+        [
+          "4543577#1",
+          "Recubplast"
+        ],
+        [
+          "4531515#1",
+          "Ingeniería CG Perú S.A.C."
+        ],
+        [
+          "2996770#2",
+          "Amrol Con SAC"
+        ],
+        [
+          "4444220#1",
+          "Asia del campo"
+        ],
+        [
+          "3126120#1",
+          "Redrilsa"
+        ],
+        [
+          "4543588#1",
+          "La Casa del Mármol S.A.S."
+        ],
+        [
+          "4537274#1",
+          "RJC Constructora & Ingeniería SAC"
+        ],
+        [
+          "4670562#1",
+          "China Gezhouba Group Company Limited Sucursal Perú"
+        ],
+        [
+          "4551384#1",
+          "MGS CONSULTING S.A."
+        ],
+        [
+          "4554540#1",
+          "Artiolab Global"
+        ],
+        [
+          "4579817#1",
+          "Encender Comunicación S.A."
+        ],
+        [
+          "4603578#1",
+          "SOCIEDAD DE SERVICIOS COMPUTACIONALES MICROSERV LIMITADA"
+        ],
+        [
+          "4644398#1",
+          "Agroindustrial Molino Sonora A.P. S.A.S."
+        ],
+        [
+          "4578901#1",
+          "Servicios Generales Noguera SpA"
+        ],
+        [
+          "4488621#1",
+          "Protektor Seguridad Integral S.A.C."
+        ],
+        [
+          "4489175#1",
+          "Grupo Calcina & Vargas"
+        ],
+        [
+          "4671817#1",
+          "Constructora Escala Arquitectos e Ingenieros"
+        ],
+        [
+          "4671818#1",
+          "Elton Leniz Arquitectos"
+        ],
+        [
+          "4671954#1",
+          "Atlántica Soluciones Arquitectónicas"
+        ],
+        [
+          "4671986#1",
+          "VHM Ingeniería S.A.S."
+        ],
+        [
+          "4672309#1",
+          "CIVITEL INGENIEROS P S.A.S."
+        ],
+        [
+          "4672312#1",
+          "Glassco Ecuador"
+        ],
+        [
+          "4672313#1",
+          "Hesamzadeh Arquitectos S.A.S."
+        ],
+        [
+          "4672314#1",
+          "Mil Herramientas SD"
+        ],
+        [
+          "4673030#1",
+          "CEMSA Perú S.A.C."
+        ],
+        [
+          "4673031#1",
+          "Domo Studio SD"
+        ],
+        [
+          "4673032#1",
+          "ESONDI S.A."
+        ],
+        [
+          "4454695#1",
+          "Consorcio COSAPI-HV"
+        ],
+        [
+          "4458112#1",
+          "Soliomar"
+        ],
+        [
+          "4458480#1",
+          "AH TOWER ENGINEERING"
+        ],
+        [
+          "4489335#1",
+          "Modarch"
+        ],
+        [
+          "4663908#1",
+          "AE PARRA INGENIEROS LTDA."
+        ],
+        [
+          "4603697#1",
+          "Avidesa de Occidente S.A."
+        ],
+        [
+          "4639199#1,763308#1",
+          "Dulces Flower"
+        ],
+        [
+          "3410770#1",
+          "HCB INGENIEROS"
+        ],
+        [
+          "4659410#1",
+          "AIREDELSUR"
+        ],
+        [
+          "4644201#1",
+          "ATELIER 587 E.I.R.L."
+        ],
+        [
+          "4641212#1",
+          "MONCOL"
+        ],
+        [
+          "1257148#1,4641587#1",
+          "American Traffic"
+        ],
+        [
+          "4667774#1",
+          "FRITZ SPORT S.A.C."
+        ],
+        [
+          "4671411#1",
+          "Cleaned services"
+        ],
+        [
+          "4669225#1",
+          "Iconik"
+        ],
+        [
+          "4671500#1",
+          "TEKNARIA"
+        ],
+        [
+          "4671084#1",
+          "Muebleando By Davalos"
+        ],
+        [
+          "4670757#1",
+          "Lo colectivo"
+        ],
+        [
+          "4670392#1",
+          "CAR UP S A"
+        ],
+        [
+          "4671069#1",
+          "INPASTAS S.A."
+        ],
+        [
+          "4670051#1",
+          "TRANSMARINA C.A."
+        ],
+        [
+          "4664698#1",
+          "Hiper S.A."
+        ],
+        [
+          "4593068#1",
+          "DSC Chile"
+        ],
+        [
+          "4579722#1",
+          "Hendrix Genetics Aquaculture S.A."
+        ],
+        [
+          "4548713#1",
+          "CEMEC PERU"
+        ],
+        [
+          "4632864#1",
+          "Tecnofactory S.A.S - Bic"
+        ],
+        [
+          "450539#1",
+          "Estudio Montevideo"
+        ],
+        [
+          "4362302#1",
+          "Ope eventos"
+        ],
+        [
+          "1128610#1",
+          "SR & Asociados E.A.S."
+        ],
+        [
+          "298063#1",
+          "IN Studio"
+        ],
+        [
+          "3900587#1,3437986#1",
+          "Londoño +"
+        ],
+        [
+          "1005366#1",
+          "C'DITEC S.A."
+        ],
+        [
+          "294815#1",
+          "ARQUITECTURA COMERCIAL ORUGA DESIGN CIA. LTDA."
+        ],
+        [
+          "3121962#1",
+          "Camposantos del Ecuador S.A Campoecuador"
+        ],
+        [
+          "4161759#1",
+          "GRUPO ECOPLAZA"
+        ],
+        [
+          "546817#1",
+          "Aeronave"
+        ],
+        [
+          "1008709#1",
+          "RMA Arquitectura"
+        ],
+        [
+          "1531206#1",
+          "Gran Valle Negocios S.A."
+        ],
+        [
+          "4394133#1,4527744#1",
+          "3D Cordoba Arquitectura"
+        ],
+        [
+          "4392463#1",
+          "GRUPO EURO S.A."
+        ],
+        [
+          "3890362#1",
+          "CS Arquitectura"
+        ],
+        [
+          "4413556#1",
+          "CONYCOM S.R.L."
+        ],
+        [
+          "925311#1",
+          "Mirabilia Desarrollos"
+        ],
+        [
+          "4392203#1",
+          "Avinco Construcciones S.A."
+        ],
+        [
+          "4382517#1",
+          "Die Küche"
+        ],
+        [
+          "4327771#1",
+          "KALPA GROUP S.A."
+        ],
+        [
+          "2266639#1",
+          "Paraná Hogar"
+        ],
+        [
+          "4337772#1",
+          "ARQCA CONSTRUCTORA"
+        ],
+        [
+          "4412775#1",
+          "UNOTRES S.A."
+        ],
+        [
+          "722675#1",
+          "Garden Automotores S.A"
+        ],
+        [
+          "4392712#1",
+          "Indigo Construcciones"
+        ],
+        [
+          "1065399#1",
+          "Cotmaq Construcciones e Ingenieria S.A.S"
+        ],
+        [
+          "4498257#1",
+          "Asesores Profesionales en Publicidad Exterior S.A.S."
+        ],
+        [
+          "4428244#1",
+          "SteelMat S.A"
+        ],
+        [
+          "3861546#1",
+          "Ingemar Neuquén"
+        ],
+        [
+          "4438033#1",
+          "Vano Escritorios"
+        ],
+        [
+          "1100916#1",
+          "American Vial Group S.R.L."
+        ],
+        [
+          "2127985#1",
+          "Rosero Construye"
+        ],
+        [
+          "4444601#1",
+          "Brandi Developers"
+        ],
+        [
+          "4474029#1",
+          "Teknik - Ingeniería y Diseño"
+        ],
+        [
+          "3443343#1",
+          "SLB Ingeniería Ambiental"
+        ],
+        [
+          "1310635#1",
+          "CECOSA S.A."
+        ],
+        [
+          "1101008#1",
+          "Corporación LANEC S.A."
+        ],
+        [
+          "4504765#1",
+          "Ferretería Millar"
+        ],
+        [
+          "4475926#1",
+          "REVESTIMIENTOS LA EUROPEA S.A."
+        ],
+        [
+          "4506088#1",
+          "LA MERA AGENCIA AUDIOVISUAL S.A.S."
+        ],
+        [
+          "3861616#1",
+          "Estudio XFB Arquitectos"
+        ],
+        [
+          "319589#1",
+          "Super Brix"
+        ],
+        [
+          "1376944#1",
+          "Sullair Argentina S.A."
+        ],
+        [
+          "4495513#1",
+          "Aberturas del Oeste"
+        ],
+        [
+          "4500867#1",
+          "SAAVEDRA ELECTRIFICACIONES S.A."
+        ],
+        [
+          "4501581#1",
+          "FABREK"
+        ],
+        [
+          "4410825#1",
+          "DYPCO S.A."
+        ],
+        [
+          "2127525#1",
+          "FLEET S.A."
+        ],
+        [
+          "4519935#1",
+          "RUMBO ARQUITECTURA S.A.S"
+        ],
+        [
+          "4511567#1",
+          "MOULING AMBIENTACIONES"
+        ],
+        [
+          "4517636#1",
+          "BRand Arquitectura"
+        ],
+        [
+          "4391327#1",
+          "MCL Studio"
+        ],
+        [
+          "4377376#1",
+          "SuperConst"
+        ],
+        [
+          "4521646#1",
+          "ARCO EQUIPOS INDUSTRIALES S.A.S."
+        ],
+        [
+          "4524346#1",
+          "Exportadora Fruttita SpA."
+        ],
+        [
+          "903379#1",
+          "CERVEPAR S.A."
+        ],
+        [
+          "742913#2",
+          "ITVAL Cia. Ltda."
+        ],
+        [
+          "4521433#1",
+          "London Import S.A."
+        ],
+        [
+          "710220#1",
+          "Grupomercadeo"
+        ],
+        [
+          "877040#1",
+          "hbt"
+        ],
+        [
+          "2023732#1",
+          "Casabella"
+        ],
+        [
+          "452383#1",
+          "EntreArquitectos Estudio"
+        ],
+        [
+          "1279667#1",
+          "Energex Sa"
+        ],
+        [
+          "2124824#2",
+          "Ariosing"
+        ],
+        [
+          "2404248#1",
+          "Central de Andamios"
+        ],
+        [
+          "617335#1",
+          "Constructoraarq"
+        ],
+        [
+          "2077688#1",
+          "Estudio Base"
+        ],
+        [
+          "3895852#1",
+          "Surca"
+        ],
+        [
+          "321485#1",
+          "Construction JK SAS Salcedo"
+        ],
+        [
+          "448902#1",
+          "Integracomercial"
+        ],
+        [
+          "598043#1",
+          "Grupo Inmobiliario Paisaje Urbano Sa"
         ]
       ]
     }
