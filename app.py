@@ -918,11 +918,11 @@ def validate_against_history(case_ids: list, region: str):
                 norm    = normalize_case_id(raw_cid)
                 # Keep the most recent delivery if a case appears in multiple batches
                 if norm not in delivered:
-                    delivered[norm] = (b_num, b_date, b_type)
+                    delivered[norm] = (b_num, b_date, batch_type)
                 else:
                     existing_date = delivered[norm][1]
                     if b_date > existing_date:
-                        delivered[norm] = (b_num, b_date, b_type)
+                        delivered[norm] = (b_num, b_date, batch_type)
 
     excluded_ids:  set  = set()
     excluded_msgs: list = []
