@@ -1016,6 +1016,33 @@ def process_data(qs_df, pl_df, cc_df, region_code):
         first_event = normalize_date(safe_get(qs_row, "First Event"))
         last_event  = normalize_date(safe_get(qs_row, "Last Event"))
 
+        # ── Machine count fields ──
+        # When sub-IDs were deduped the QS totals are inflated.
+        # CC is the authoritative source; use it when available and it differs from QS.
+        qs_total    = safe_get(qs_row, "Total Machines")
+        qs_action   = safe_get(qs_row, "Actionable Machines")
+        qs_diff     = safe_get(qs_row, "[CFa]-Difference")
+        qs_ids      = safe_get(qs_row, "Approved Machines")
+
+        cc_total    = safe_get(cc_row, "# All Time Machines")   if cc_row is not None else ""
+        cc_action   = safe_get(cc_row, "# Actionable Machines") if cc_row is not None else ""
+        cc_ids      = safe_get(cc_row, "Actionable Machine IDs") if cc_row is not None else ""
+
+        if cc_total and cc_total != qs_total:
+            # CC overrides QS — recalculate difference
+            out_total  = cc_total
+            out_action = cc_action if cc_action else qs_action
+            out_ids    = cc_ids    if cc_ids    else qs_ids
+            try:
+                out_diff = str(int(float(out_total)) - int(float(out_action)))
+            except Exception:
+                out_diff = qs_diff
+        else:
+            out_total  = qs_total
+            out_action = qs_action
+            out_diff   = qs_diff
+            out_ids    = qs_ids
+
         base = {
             "Date Added to This Sheet": "", "Is Multi-National": safe_get(cc_row, "Is Multi National"),
             "Machine Overview": machine_overview, "Investigation Notes": investigation_notes,
@@ -1024,10 +1051,10 @@ def process_data(qs_df, pl_df, cc_df, region_code):
             "Industry": safe_get(cc_row, "Industry"), "Case Tier": safe_get(qs_row, "Case Tier"),
             "Case Category": safe_get(qs_row, "[Cfa]-Category"),
             "Actionable Category": safe_get(qs_row, "[Cfa]-ActionableCategory"),
-            "# All Time Machines": safe_get(qs_row, "Total Machines"),
-            "# Actionable Machines": safe_get(qs_row, "Actionable Machines"),
-            "# Difference": safe_get(qs_row, "[CFa]-Difference"),
-            "Actionable Machine IDs": safe_get(qs_row, "Approved Machines"),
+            "# All Time Machines": out_total,
+            "# Actionable Machines": out_action,
+            "# Difference": out_diff,
+            "Actionable Machine IDs": out_ids,
             "First Event": first_event, "Last Event": last_event,
             "Time Span": safe_get(cc_row, "Time Span"),
             "Generic Email Address": safe_get(cc_row, "Generic Email Addresses"),
