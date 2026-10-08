@@ -14754,7 +14754,7 @@
             "countries": [
               "Argentina"
             ],
-            "quota": 15
+            "quota": 10
           },
           {
             "name": "Colombia · Ecuador",
@@ -14762,14 +14762,14 @@
               "Colombia",
               "Ecuador"
             ],
-            "quota": 45
+            "quota": 40
           },
           {
             "name": "Peru",
             "countries": [
               "Peru"
             ],
-            "quota": 25
+            "quota": 40
           },
           {
             "name": "Uruguay · Bolivia · Paraguay",
@@ -14778,7 +14778,7 @@
               "Bolivia",
               "Paraguay"
             ],
-            "quota": 25
+            "quota": 30
           }
         ]
       }
