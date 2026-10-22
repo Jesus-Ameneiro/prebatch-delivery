@@ -16490,42 +16490,30 @@
         "region": "CS",
         "groups": [
           {
-            "name": "Chile",
+            "name": "New Group",
             "countries": [
-              "Chile"
+              "Argentina",
+              "Uruguay"
             ],
-            "quota": 30
+            "quota": 45
           },
           {
-            "name": "Argentina",
+            "name": "New Group",
             "countries": [
-              "Argentina"
-            ],
-            "quota": 10
-          },
-          {
-            "name": "Colombia · Ecuador",
-            "countries": [
+              "Ecuador",
               "Colombia",
-              "Ecuador"
-            ],
-            "quota": 40
-          },
-          {
-            "name": "Peru",
-            "countries": [
               "Peru"
             ],
-            "quota": 40
+            "quota": 66
           },
           {
-            "name": "Uruguay · Bolivia · Paraguay",
+            "name": "New Group",
             "countries": [
-              "Uruguay",
+              "Chile",
               "Bolivia",
               "Paraguay"
             ],
-            "quota": 30
+            "quota": 39
           }
         ]
       }
