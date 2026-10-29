@@ -16975,6 +16975,495 @@
           "Del Carpio"
         ]
       ]
+    },
+    {
+      "batch_number": 71,
+      "delivery_date": "2026-10-29",
+      "region": "CS",
+      "profile": "Standard CS · 📊 Batch Standard",
+      "total_cases": 120,
+      "cases": [
+        [
+          "4685565#1",
+          "CIARQ Constructora"
+        ],
+        [
+          "4685638#1",
+          "GR Inversiones Inmobiliaria"
+        ],
+        [
+          "4690827#1",
+          "TECNOLOGIA Y PRODUCTO E.I.R.L"
+        ],
+        [
+          "4692239#1",
+          "Anva Xpress Constructora"
+        ],
+        [
+          "4692972#1",
+          "Jafa Gerencia y Construcción"
+        ],
+        [
+          "4692979#1",
+          "GMRC PERU SAC"
+        ],
+        [
+          "4692981#1",
+          "U.S. ITEM S.A."
+        ],
+        [
+          "4535050#1",
+          "Gold Clean"
+        ],
+        [
+          "4630727#1",
+          "MP arquitectura"
+        ],
+        [
+          "4677442#1",
+          "RS Arquitectos Ltda"
+        ],
+        [
+          "4685546#1",
+          "Expostand Latam"
+        ],
+        [
+          "4686075#1",
+          "HidroSpa"
+        ],
+        [
+          "4686240#1",
+          "Grupo Barbagallo"
+        ],
+        [
+          "4686351#1",
+          "Renoann s.a.s."
+        ],
+        [
+          "4691557#1",
+          "AutoZentrum"
+        ],
+        [
+          "4695571#1",
+          "Imsaguas Ltda."
+        ],
+        [
+          "4692980#1",
+          "FUNERARIA JARDINES S.A."
+        ],
+        [
+          "4680839#1",
+          "ESTUDIO PANASCI"
+        ],
+        [
+          "4690829#1",
+          "Consultoría & Construcción Grupo Pérgola"
+        ],
+        [
+          "4690828#1",
+          "UPKEEP FACILITY MANAGEMENT S.A.C."
+        ],
+        [
+          "1825049#1",
+          "Estudio Bonomi"
+        ],
+        [
+          "2983691#1",
+          "Ignacio Pandolfi Arquitecto"
+        ],
+        [
+          "3898020#1",
+          "Studio Codigo G"
+        ],
+        [
+          "4344396#1",
+          "GRUPO DEPOR"
+        ],
+        [
+          "4399034#1",
+          "Americalogistica"
+        ],
+        [
+          "4400055#1",
+          "Concretio"
+        ],
+        [
+          "4411502#1",
+          "Macro Arquitectura y Gestion Urbana S.A"
+        ],
+        [
+          "4413192#1",
+          "Bramey"
+        ],
+        [
+          "4447952#1",
+          "Coomservi"
+        ],
+        [
+          "4452324#1",
+          "Formas & Formas S.A.S"
+        ],
+        [
+          "4461927#1",
+          "Ferreteria Corralon Garay"
+        ],
+        [
+          "4472879#1",
+          "FDS ARQUITECTOS"
+        ],
+        [
+          "4489777#1",
+          "Soluciones Publicitarias EC"
+        ],
+        [
+          "4512390#1",
+          "Agustino"
+        ],
+        [
+          "4674257#1",
+          "Inmobiliaria Josa"
+        ],
+        [
+          "4678667#1",
+          "LOCADORA ATLANTIC S.A."
+        ],
+        [
+          "4679484#1",
+          "Empresa Constructora J.B.A. S.P.A."
+        ],
+        [
+          "4680720#1",
+          "ChileLift"
+        ],
+        [
+          "4682759#1",
+          "Constructora Maja"
+        ],
+        [
+          "4684115#1",
+          "Pva Chile Spa"
+        ],
+        [
+          "4684163#1",
+          "Synixtor Chile"
+        ],
+        [
+          "4684246#1",
+          "Soltec Patagonia Ltda."
+        ],
+        [
+          "4684358#1",
+          "Montessa Mall"
+        ],
+        [
+          "4685754#1",
+          "MVera Construcciones y Muebleria"
+        ],
+        [
+          "4685762#1",
+          "Andrade & Puyol"
+        ],
+        [
+          "4686287#1",
+          "Constructora Jara"
+        ],
+        [
+          "4686589#1",
+          "SOTRAMIN S.A."
+        ],
+        [
+          "4688521#1",
+          "ABRASIVOS Y RECUBRIMIENTOS INDUSTRIALES S.A.C."
+        ],
+        [
+          "4688535#1",
+          "PIDTECNOLOGIA SAC"
+        ],
+        [
+          "4688536#1",
+          "Agromega Peru S.A.C."
+        ],
+        [
+          "1069151#1",
+          "Taylor Made Design"
+        ],
+        [
+          "1693653#1",
+          "Grupo Concreto"
+        ],
+        [
+          "1911779#1",
+          "Sebastian Zeas Arquitecto"
+        ],
+        [
+          "2313214#1",
+          "MD Projects"
+        ],
+        [
+          "2325111#1",
+          "Muebles La Americana"
+        ],
+        [
+          "2511632#1",
+          "Mi Tierra S.A."
+        ],
+        [
+          "3406664#1",
+          "Ingenio Sucroalcoholero Aguaí S.A."
+        ],
+        [
+          "4167769#1",
+          "Luis Fernando Roca Arquitectura"
+        ],
+        [
+          "4203125#1,4482129#1",
+          "Estudio Canil"
+        ],
+        [
+          "4324347#1",
+          "Nubiral"
+        ],
+        [
+          "4334336#1",
+          "Habitando - Construcciones y Servicios"
+        ],
+        [
+          "4456428#1",
+          "FancyRooms"
+        ],
+        [
+          "4464684#1",
+          "E-Global S.A"
+        ],
+        [
+          "4579921#1",
+          "Cicloenergetico S.A.S"
+        ],
+        [
+          "4599081#1",
+          "H2A Arquitectos"
+        ],
+        [
+          "4639595#1,4450476#1",
+          "Estudios Integrales-Ingenieria y Servicios S.A"
+        ],
+        [
+          "4660347#1",
+          "Decorarte S.A.C."
+        ],
+        [
+          "4684504#1",
+          "Grupo Constructor Santana S.A.S."
+        ],
+        [
+          "4688520#1",
+          "Inversiones Innova Ingenieros Arquitectos SAC"
+        ],
+        [
+          "4688532#1",
+          "HPC Servicios & Cobranzas Integrales S.A.C."
+        ],
+        [
+          "715495#1",
+          "Original Ltda"
+        ],
+        [
+          "1233055#2",
+          "Rivertsa S.A."
+        ],
+        [
+          "1655748#1",
+          "AUTOPACIFICO S.A.S."
+        ],
+        [
+          "3398840#1",
+          "CRECER S.A."
+        ],
+        [
+          "4497194#1",
+          "Grupogallardo ArqDis"
+        ],
+        [
+          "1287568#1",
+          "MEGALABS ARGENTINA S.A.U."
+        ],
+        [
+          "1595483#1",
+          "ALTUS Arquitectura"
+        ],
+        [
+          "3049436#1",
+          "Fernando A. Chiesa S.A."
+        ],
+        [
+          "3255338#1,1840295#1",
+          "CIS Ingenieria"
+        ],
+        [
+          "3860440#1",
+          "SANATORIO BRITÁNICO S.A."
+        ],
+        [
+          "4414938#1",
+          "Miaterra Desarrollos Inmobiliarios"
+        ],
+        [
+          "4443716#1",
+          "AVJA Estudio"
+        ],
+        [
+          "4688518#1",
+          "W&O TABLEMAD S.A.C."
+        ],
+        [
+          "4688533#1",
+          "SOLUCIONES ESPECÍFICAS S.A.C"
+        ],
+        [
+          "795998#3",
+          "Galpones y Tinglados Escobar S.R.L."
+        ],
+        [
+          "1077123#1",
+          "360 Studio"
+        ],
+        [
+          "4678064#1,1495553#1",
+          "Ferz Arquitectos"
+        ],
+        [
+          "1580676#1",
+          "Conalquipo SAS"
+        ],
+        [
+          "1658028#1",
+          "COLOR CREATIVO"
+        ],
+        [
+          "1884367#1",
+          "Carmax S.R.L"
+        ],
+        [
+          "2404100#1",
+          "Poltrona Deco"
+        ],
+        [
+          "4486187#1",
+          "DuckWorks, LLC."
+        ],
+        [
+          "804129#1",
+          "Naqua"
+        ],
+        [
+          "1594593#1",
+          "Amasache Arquitectura y Diseño"
+        ],
+        [
+          "3127667#1",
+          "PROINAR S.R.L."
+        ],
+        [
+          "1581393#1",
+          "Domh"
+        ],
+        [
+          "1915084#1",
+          "Monteverdi Construcciones"
+        ],
+        [
+          "2918542#1",
+          "Casa Musa S.A."
+        ],
+        [
+          "366403#1",
+          "SYAO Design Studio"
+        ],
+        [
+          "880099#1",
+          "Eficacia S.A.S"
+        ],
+        [
+          "1430705#1",
+          "Latiff Diseño y Construccion S.A.S"
+        ],
+        [
+          "1281783#1",
+          "Condiseno"
+        ],
+        [
+          "651616#1",
+          "MVP Arquitectos"
+        ],
+        [
+          "1072233#1",
+          "LKEC Constructores"
+        ],
+        [
+          "1141876#1",
+          "Archicenter Arquitectos S.A.C."
+        ],
+        [
+          "1939377#1",
+          "Divanlito"
+        ],
+        [
+          "4337861#1,517223#1",
+          "Arquitectura Infinita"
+        ],
+        [
+          "2000080#1",
+          "Konecta Argentina"
+        ],
+        [
+          "2254064#1",
+          "DSE Ingeniería SAC"
+        ],
+        [
+          "366238#1",
+          "Kuvaarquitectos"
+        ],
+        [
+          "456026#1",
+          "RyT Arquitectos S.A.C"
+        ],
+        [
+          "455915#1",
+          "Grupo A.J. Vierci"
+        ],
+        [
+          "222747#3",
+          "JJC Contratistas Generales S.A"
+        ],
+        [
+          "1857348#1",
+          "Build Pro"
+        ],
+        [
+          "4176838#1",
+          "Darp"
+        ],
+        [
+          "4386793#1,558489#1",
+          "Methanoia"
+        ],
+        [
+          "1911987#1",
+          "Novopan Peru SAC"
+        ],
+        [
+          "4375631#1,2477683#1,1809386#1",
+          "Grupo Konectanet, SL"
+        ],
+        [
+          "2129667#1,482546#1",
+          "Celulosa Arauco y Constitución S.A"
+        ],
+        [
+          "4429482#1,4393910#1,971436#1",
+          "Grupo Pose"
+        ]
+      ]
     }
   ],
   "dist_profiles": {
