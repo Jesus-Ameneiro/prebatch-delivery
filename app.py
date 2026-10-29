@@ -239,8 +239,17 @@ BATCH_LABELS = {
 # GitHub Persistent Storage
 # ──────────────────────────────────────────────
 
+def _secret(name, default=""):
+    """Read one Streamlit secret as a stripped string. Never raises: a missing secrets
+    file, a missing key or a stray trailing space must not crash the page."""
+    try:
+        val = st.secrets.get(name, default)
+    except Exception:
+        return str(default)
+    return str(default) if val is None else str(val).strip()
+
 def _gh_headers():
-    token = st.secrets.get("GITHUB_TOKEN", "")
+    token = _secret("GITHUB_TOKEN")
     return {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github.v3+json",
@@ -249,10 +258,52 @@ def _gh_headers():
 
 def _gh_config():
     """Return (repo, path, branch) from secrets."""
-    repo   = st.secrets.get("GITHUB_REPO", "")
-    path   = st.secrets.get("HISTORY_FILE_PATH", HISTORY_FILE)
-    branch = st.secrets.get("GITHUB_BRANCH", "main")
+    repo   = _secret("GITHUB_REPO")
+    path   = _secret("HISTORY_FILE_PATH", HISTORY_FILE) or HISTORY_FILE
+    branch = _secret("GITHUB_BRANCH", "main") or "main"
     return repo, path, branch
+
+def github_config_problem():
+    """Plain-language explanation if the GitHub secrets are unusable, otherwise None.
+    Checked BEFORE any request so a missing secret is reported as what it is, not as a
+    confusing GitHub '404 Not Found'."""
+    token = _secret("GITHUB_TOKEN")
+    repo  = _secret("GITHUB_REPO")
+    missing = []
+    if len(token) <= 10:
+        missing.append("GITHUB_TOKEN")
+    if not repo:
+        missing.append("GITHUB_REPO")
+    if missing:
+        return (
+            "GitHub storage is not configured: " + " and ".join(missing)
+            + (" is" if len(missing) == 1 else " are")
+            + " empty or missing in this app's Streamlit secrets, so the delivery history "
+              "can be neither read nor saved. Add the secrets in the app's Settings → Secrets "
+              "and reboot the app."
+        )
+    if repo.count("/") != 1 or repo.startswith("/") or repo.endswith("/"):
+        return f"GITHUB_REPO is `{repo}` but must look like `owner/repo-name`."
+    return None
+
+def _gh_status(url):
+    """HTTP status of a GET against the GitHub API, or None if the request itself failed."""
+    try:
+        req = urllib.request.Request(url, headers=_gh_headers())
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.getcode()
+    except urllib.error.HTTPError as e:
+        return e.code
+    except Exception:
+        return None
+
+_GH_HINTS = {
+    401: "The token was rejected (expired, revoked or mistyped).",
+    403: "The token lacks permission for this repo, or GitHub is rate-limiting the request.",
+    404: "GitHub cannot find the repo, branch or file (it typically also answers 404 for a private repo the token cannot see).",
+    409: "The history file changed on GitHub after this page loaded it. Press 🔄 to reload, then retry.",
+    422: "GitHub rejected the update. This usually means the file already exists and this session does not hold its latest version. Press 🔄 to reload, then retry.",
+}
 
 def _gh_file_url():
     repo, path, _ = _gh_config()
@@ -260,6 +311,9 @@ def _gh_file_url():
 
 def load_history_from_github():
     """Fetch batch_history.json from GitHub. Returns (history_dict, sha, error_msg)."""
+    problem = github_config_problem()
+    if problem:
+        return None, None, problem
     repo, path, branch = _gh_config()
     url = f"https://api.github.com/repos/{repo}/contents/{path}?ref={branch}"
     try:
@@ -270,16 +324,31 @@ def load_history_from_github():
         return json.loads(content), data["sha"], None
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return {"MCC": [], "CS": []}, None, None   # file doesn't exist yet — fresh start
+            # A 404 means "no history file yet" ONLY when the repo and branch really exist.
+            # Otherwise (wrong repo, wrong branch, token cannot see a private repo) it is a
+            # configuration error and must NOT masquerade as an empty history.
+            repo_ok   = _gh_status(f"https://api.github.com/repos/{repo}") == 200
+            branch_ok = repo_ok and _gh_status(
+                f"https://api.github.com/repos/{repo}/branches/{urllib.parse.quote(branch, safe='/')}"
+            ) == 200
+            if repo_ok and branch_ok:
+                return {"MCC": [], "CS": []}, None, None      # genuinely a fresh start
+            return None, None, (
+                f"GitHub returned 404 for `{repo}` (branch `{branch}`, file `{path}`) and the "
+                f"repo/branch could not be confirmed with this token. {_GH_HINTS[404]}"
+            )
         body = ""
         try: body = e.read().decode()
         except Exception: pass
-        return None, None, f"GitHub HTTP {e.code} — {body}"
+        return None, None, f"GitHub HTTP {e.code} — {_GH_HINTS.get(e.code, '')} {body}".strip()
     except Exception as e:
         return None, None, str(e)
 
 def save_history_to_github(history_dict, sha):
     """Push updated batch_history.json to GitHub. Returns (ok, error_msg, new_sha)."""
+    problem = github_config_problem()
+    if problem:
+        return False, problem, sha
     repo, path, branch = _gh_config()
     url = f"https://api.github.com/repos/{repo}/contents/{path}"
     content_b64 = base64.b64encode(
@@ -303,7 +372,7 @@ def save_history_to_github(history_dict, sha):
         body = ""
         try: body = e.read().decode()
         except Exception: pass
-        return False, f"GitHub HTTP {e.code} — {body}", sha
+        return False, f"GitHub HTTP {e.code} — {_GH_HINTS.get(e.code, '')} {body}".strip(), sha
     except Exception as e:
         return False, str(e), sha
 
@@ -315,7 +384,25 @@ def diagnose_github() -> list:
     """
     results = []
     repo, path, branch = _gh_config()
-    token = st.secrets.get("GITHUB_TOKEN", "")
+    token = _secret("GITHUB_TOKEN")
+
+    # 0 — which secrets can the running app actually see? (names only, never values)
+    try:
+        visible = sorted(str(k) for k in st.secrets.keys())
+    except Exception:
+        visible = []
+    if not visible:
+        results.append(("Secrets visible to the app", False,
+                        "none — Streamlit is passing no secrets to this app instance. Possible causes: "
+                        "the Secrets box of THIS app is empty, you are on a different app instance than "
+                        "the one you edited, or the app was not rebooted after saving."))
+    elif {"GITHUB_TOKEN", "GITHUB_REPO"} <= set(visible):
+        results.append(("Secrets visible to the app", True, ", ".join(f"`{n}`" for n in visible)))
+    else:
+        results.append(("Secrets visible to the app", False,
+                        ", ".join(f"`{n}`" for n in visible)
+                        + " — GITHUB_TOKEN and/or GITHUB_REPO are not among these top-level names. "
+                          "Keys placed under a [section] header are nested and are not found by the app."))
 
     # 1 — Token present
     token_ok = bool(token and len(token) > 10)
@@ -420,8 +507,13 @@ _init_state()
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _fetch_github_history():
-    """Fetch batch_history.json. Cached 5 min, shared across sessions."""
-    return load_history_from_github()
+    """Fetch batch_history.json. Cached 5 min, shared across sessions.
+    A failure RAISES instead of returning: Streamlit does not cache exceptions, so a failed
+    load is retried on the next run instead of being remembered for 5 minutes."""
+    history, sha, err = load_history_from_github()
+    if err:
+        raise RuntimeError(err)
+    return history, sha
 
 
 def _full_payload() -> dict:
@@ -457,7 +549,11 @@ def _apply_history(history, sha):
 
 
 # Run on every render — cache keeps it fast, TTL keeps it fresh
-_hist_data, _hist_sha, _hist_err = _fetch_github_history()
+try:
+    _hist_data, _hist_sha = _fetch_github_history()
+    _hist_err = None
+except Exception as _hist_exc:
+    _hist_data, _hist_sha, _hist_err = None, None, str(_hist_exc)
 if _hist_err:
     st.session_state.history_load_ok = False
     st.session_state.history_load_msg = f"⚠️ Could not load batch history from GitHub: {_hist_err}"
@@ -602,7 +698,7 @@ with st.sidebar:
                     else:
                         st.error(f"GitHub save failed: {err}")
         else:
-            st.caption(f"{reg}: No deliveries confirmed yet.")
+            st.caption(f"{reg}: History unavailable: GitHub is not connected (see the warning at the top)." if not st.session_state.history_load_ok else f"{reg}: No deliveries confirmed yet.")
 
     st.markdown('<hr style="margin:1.2rem 0 0.8rem 0;border:none;border-top:1px solid #3A3A3A;">', unsafe_allow_html=True)
 
@@ -1658,10 +1754,18 @@ with st.expander("📥 Confirm from Existing Prebatch File", expanded=False):
                     f"Profile: **Manual confirmation from file** · Region: **{cf_region}**"
                 )
 
+                _cf_problem = github_config_problem()
+                if _cf_problem:
+                    st.error(
+                        f"🚫 {_cf_problem}\n\n"
+                        "Nothing can be registered until this is fixed. Keep the Prebatch file; after the "
+                        "reboot, upload it here again."
+                    )
+
                 if st.button(
                     "✅ Confirm Delivery from File", type="primary",
                     use_container_width=True, key="cf_confirm_btn",
-                    disabled=cf_is_dup and not cf_overwrite_ok,
+                    disabled=(cf_is_dup and not cf_overwrite_ok) or bool(_cf_problem),
                 ):
                     cf_entry = {
                         "batch_number": int(cf_batch_num),
@@ -1674,6 +1778,7 @@ with st.expander("📥 Confirm from Existing Prebatch File", expanded=False):
                             for _, row in cf_df.iterrows()
                         ],
                     }
+                    _prev_history = copy.deepcopy(st.session_state.delivery_history)
                     cf_batches = st.session_state.delivery_history.setdefault(cf_region, [])
                     replaced = False
                     for i, b in enumerate(cf_batches):
@@ -1699,7 +1804,10 @@ with st.expander("📥 Confirm from Existing Prebatch File", expanded=False):
                         )
                         st.rerun()
                     else:
+                        st.session_state.delivery_history = _prev_history   # nothing was saved: keep no phantom batch
                         st.error(f"❌ Failed to save to GitHub: {err}")
+                        st.info("Nothing was saved, so this batch is NOT in the delivery history yet. "
+                                "Fix the connection and press the button again.")
                         with st.expander("🔧 GitHub Diagnostics", expanded=True):
                             for label, ok_c, detail in diagnose_github():
                                 st.markdown(f"{'✅' if ok_c else '❌'} **{label}** — {detail}")
@@ -1799,11 +1907,20 @@ if all_uploaded:
     if not all_valid:
         st.warning("One or more files failed validation. Resolve the column errors before continuing.")
 
+    if not st.session_state.history_load_ok:
+        st.error(
+            "🚫 Validate Batch is locked because the delivery history could not be loaded from "
+            "GitHub. Without it the 6-month rule and the repeated-case checks cannot run, and an "
+            "empty result would look like an all-clear. See the warning at the top of the page, "
+            "fix the GitHub connection, then press 🔄."
+        )
+
     btn_col1, btn_col2 = st.columns(2)
 
     # ── Validate Batch ──
     with btn_col1:
-        if st.button("🔍 Validate Batch", use_container_width=True, disabled=not all_valid,
+        if st.button("🔍 Validate Batch", use_container_width=True,
+                     disabled=(not all_valid) or (not st.session_state.history_load_ok),
                      help="Check Case IDs against previously confirmed deliveries."):
             try:
                 qs_temp = clean_df(merge_qs_files(qs_files))
@@ -2084,9 +2201,17 @@ if st.session_state.result_df is not None:
             f"Profile: **{confirm_label}** · Region: **{rp}**"
         )
 
+        _gh_problem = github_config_problem()
+        if _gh_problem:
+            st.error(
+                f"🚫 {_gh_problem}\n\n"
+                "Your Prebatch file is not affected: download it above. Once the secrets are fixed "
+                "and the app is rebooted, register it with **Confirm from Existing Prebatch File**."
+            )
+
         if st.button("✅ Confirm Batch Delivery", type="primary",
                      use_container_width=True, key="confirm_delivery_btn",
-                     disabled=is_duplicate and not overwrite_confirmed):
+                     disabled=(is_duplicate and not overwrite_confirmed) or bool(_gh_problem)):
             batch_entry = {
                 "batch_number": int(batch_number),
                 "delivery_date": delivery_date.strftime("%Y-%m-%d"),
@@ -2095,6 +2220,7 @@ if st.session_state.result_df is not None:
                 "cases": [[row["Case ID"], row.get("Entity Name", "")]
                            for _, row in result_df.iterrows()],
             }
+            _prev_history = copy.deepcopy(st.session_state.delivery_history)
             region_batches = st.session_state.delivery_history.setdefault(rp, [])
             replaced = False
             for i, b in enumerate(region_batches):
@@ -2123,9 +2249,11 @@ if st.session_state.result_df is not None:
                 )
                 st.rerun()
             else:
+                st.session_state.delivery_history = _prev_history   # nothing was saved: keep no phantom batch
                 st.error(f"❌ Failed to save to GitHub: {err}")
-                st.info("Batch added to in-memory history but not persisted. "
-                        "Check your GitHub secrets and retry.")
+                st.info("Nothing was saved, so this batch is NOT in the delivery history yet. "
+                        "Your Prebatch file is unaffected. Fix the connection and press Confirm again, "
+                        "or use Confirm from Existing Prebatch File.")
                 with st.expander("🔧 Run GitHub Diagnostics", expanded=True):
                     for label, ok_check, detail in diagnose_github():
                         st.markdown(f"{'✅' if ok_check else '❌'} **{label}** — {detail}")
