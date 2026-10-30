@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit.errors import StreamlitAPIException
 import streamlit.components.v1 as components
 import pandas as pd
 import base64
@@ -39,141 +40,187 @@ if doc_pdf_path.exists():
 # ──────────────────────────────────────────────
 # CSS / Branding
 # ──────────────────────────────────────────────
-st.markdown("""
-<style>
-    :root {
-        --rx-orange: #F47920; --rx-orange-dark: #D4611A;
-        --rx-black: #1A1A1A;  --rx-dark-gray: #2D2D2D; --rx-mid-gray: #4A4A4A;
-        --rx-blue: #1E6FBF;   --rx-blue-dark: #155A9C;
-    }
-    header[data-testid="stHeader"] {
-        background-color: var(--rx-black) !important;
-        border-bottom: 3px solid var(--rx-orange) !important;
-    }
-    [data-testid="stActionButton"],
-    [data-testid="stToolbarActionButton"][aria-label="Edit source"],
-    header a[href*="github"], [data-testid="stAppDeployButton"],
-    [data-testid="stSourceButton"] { display: none !important; }
-    header button[title="Favorite"], header button[title="Star"],
-    header button[title="Edit"], header button[title="Edit source"],
-    header button[title="Fork this app"],
-    header a[title*="GitHub"], header a[title*="github"],
-    header a[title="View app source"] { display: none !important; }
-    button[kind="primary"], .stDownloadButton > button[kind="primary"] {
-        background-color: var(--rx-orange) !important; border-color: var(--rx-orange) !important;
-        color: white !important; font-weight: 600 !important;
-    }
-    button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover {
-        background-color: var(--rx-orange-dark) !important; border-color: var(--rx-orange-dark) !important;
-    }
-    section[data-testid="stSidebar"] { background-color: var(--rx-black) !important; }
-    section[data-testid="stSidebar"] * { color: #D0D0D0 !important; }
-    section[data-testid="stSidebar"] h1,
-    section[data-testid="stSidebar"] h2,
-    section[data-testid="stSidebar"] h3,
-    section[data-testid="stSidebar"] h4 { color: var(--rx-orange) !important; }
-    section[data-testid="stSidebar"] a { color: var(--rx-orange) !important; }
-    section[data-testid="stSidebar"] hr { border-color: #3A3A3A !important; }
-    section[data-testid="stSidebar"] code {
-        background-color: var(--rx-dark-gray) !important; color: var(--rx-orange) !important;
-    }
-    .rx-title-bar {
-        background: linear-gradient(135deg, var(--rx-black) 0%, var(--rx-dark-gray) 100%);
-        padding: 1.2rem 2rem; border-radius: 10px; margin-bottom: 1.5rem;
-        border-left: 5px solid var(--rx-orange); display: flex; align-items: center; gap: 1.5rem;
-    }
-    .rx-title-bar .rx-logo img { height: 60px; width: auto; }
-    .rx-title-bar .rx-text h1 {
-        color: white !important; margin: 0 !important;
-        font-size: 1.6rem !important; line-height: 1.3 !important;
-    }
-    .rx-title-bar .rx-text p {
-        color: #B0B0B0 !important; margin: 0.2rem 0 0 0 !important; font-size: 0.9rem !important;
-    }
-    [data-testid="stMetric"] {
-        background-color: #FAFAFA; border: 1px solid #E0E0E0;
-        border-top: 3px solid var(--rx-orange); padding: 0.8rem 1rem; border-radius: 8px;
-    }
-    [data-testid="stMetricLabel"] p { font-weight: 600 !important; color: var(--rx-mid-gray) !important; }
-    [data-testid="stMetricValue"] { color: var(--rx-black) !important; }
-    section[data-testid="stSidebar"] .rx-doc-btn {
-        display: block !important; text-align: center !important; padding: 0.5rem 1rem !important;
-        background-color: #F47920 !important; border: 2px solid #F47920 !important;
-        border-radius: 6px !important; text-decoration: none !important; margin: 0 !important;
-    }
-    section[data-testid="stSidebar"] .rx-doc-btn:hover {
-        background-color: #D4611A !important; border-color: #D4611A !important;
-    }
-    section[data-testid="stSidebar"] .rx-doc-btn .rx-doc-btn-text {
-        color: #FFFFFF !important; font-family: 'Source Sans Pro', sans-serif !important;
-        font-weight: 600 !important; font-size: 0.82rem !important; letter-spacing: 0.3px !important;
-    }
-    .val-ok  { color: #2E7D32; font-weight: 600; }
-    .val-err { color: #B71C1C; font-weight: 600; }
-    /* ── Region indicator banner ── */
-    .rx-region-mcc {
-        display: flex; align-items: center; gap: 1rem;
-        background: linear-gradient(135deg, #1A1A1A 0%, #2D2D2D 100%);
-        border: 2px solid #F47920; border-radius: 10px;
-        padding: 0.9rem 1.4rem; margin-bottom: 0.8rem;
-    }
-    .rx-region-cs {
-        display: flex; align-items: center; gap: 1rem;
-        background: linear-gradient(135deg, #0D1B2A 0%, #1A2E45 100%);
-        border: 2px solid #1E6FBF; border-radius: 10px;
-        padding: 0.9rem 1.4rem; margin-bottom: 0.8rem;
-    }
-    .rx-region-badge-mcc {
-        background: #F47920; color: white; font-weight: 800;
-        font-size: 1.1rem; padding: 0.3rem 0.9rem; border-radius: 6px;
-        letter-spacing: 1px; white-space: nowrap;
-    }
-    .rx-region-badge-cs {
-        background: #1E6FBF; color: white; font-weight: 800;
-        font-size: 1.1rem; padding: 0.3rem 0.9rem; border-radius: 6px;
-        letter-spacing: 1px; white-space: nowrap;
-    }
-    .rx-region-text { flex: 1; }
-    .rx-region-text h3 { margin: 0 !important; font-size: 1rem !important; }
-    .rx-region-text p  { margin: 0.1rem 0 0 0 !important; font-size: 0.82rem !important; color: #B0B0B0 !important; }
-    .rx-region-mcc .rx-region-text h3 { color: #F47920 !important; }
-    .rx-region-cs  .rx-region-text h3 { color: #1E6FBF !important; }
-    /* ── Region-coloured batch section ── */
-    .batch-section-mcc {
-        background: linear-gradient(135deg, #1A1A1A 0%, #2D2D2D 100%);
-        border: 1px solid #F47920; border-radius: 10px; padding: 1.2rem 1.5rem; margin-top: 0.5rem;
-    }
-    .batch-section-mcc h3 { color: #F47920 !important; margin: 0 0 0.3rem 0 !important; font-size: 1.1rem !important; }
-    .batch-section-mcc p  { color: #B0B0B0 !important; font-size: 0.88rem !important; margin: 0 !important; }
-    .batch-section-cs {
-        background: linear-gradient(135deg, #0D1B2A 0%, #1A2E45 100%);
-        border: 1px solid #1E6FBF; border-radius: 10px; padding: 1.2rem 1.5rem; margin-top: 0.5rem;
-    }
-    .batch-section-cs h3 { color: #1E6FBF !important; margin: 0 0 0.3rem 0 !important; font-size: 1.1rem !important; }
-    .batch-section-cs p  { color: #B0B0B0 !important; font-size: 0.88rem !important; margin: 0 !important; }
-    .batch-section {
-        background: linear-gradient(135deg, #1A1A1A 0%, #2D2D2D 100%);
-        border: 1px solid #F47920; border-radius: 10px; padding: 1.2rem 1.5rem; margin-top: 1rem;
-    }
-    .batch-section h3 { color: #F47920 !important; margin: 0 0 0.3rem 0 !important; font-size: 1.1rem !important; }
-    .batch-section p  { color: #B0B0B0 !important; font-size: 0.88rem !important; margin: 0 !important; }
-    .confirm-section {
-        background: #F0FAF0; border: 2px solid #2E7D32;
-        border-radius: 10px; padding: 1.2rem 1.5rem; margin-top: 1rem;
-    }
-    .confirm-section h3 { color: #2E7D32 !important; margin: 0 0 0.4rem 0 !important; font-size: 1.05rem !important; }
-    .backlog-card {
-        background: #FFF8F3; border: 1px solid #F47920;
-        border-radius: 8px; padding: 0.8rem 1rem; margin-top: 0.5rem;
-    }
-    .rx-footer { margin-top: 3rem; padding: 1rem 0; border-top: 2px solid var(--rx-orange); text-align: center; }
-    .rx-footer p { color: var(--rx-mid-gray) !important; font-size: 0.8rem !important; margin: 0.15rem 0 !important; }
-    .rx-footer .rx-conf {
-        font-weight: 700; color: var(--rx-orange) !important; text-transform: uppercase;
-        letter-spacing: 0.5px; font-size: 0.75rem !important;
-    }
-</style>
-""", unsafe_allow_html=True)
+APP_CSS = r"""
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root{
+  --bg:#0B0F14; --surface:#111821; --surface-2:#172230; --surface-3:#1E2D40;
+  --border:#243244; --border-soft:#1A2634;
+  --text:#E8EEF5; --muted:#8FA0B5; --faint:#62758C;
+  --accent:#F47920; --accent-hover:#FF8C3A; --accent-text:#FF9A4D;
+  --accent-soft:rgba(244,121,32,.14); --accent-line:rgba(244,121,32,.55);
+  --ok:#3FB950; --ok-soft:rgba(63,185,80,.12); --warn:#E3B341; --err:#F85149;
+}
+
+/* ── base ───────────────────────────────────────── */
+.stApp{ background:var(--bg); color:var(--text); font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif; }
+.stApp *:not([data-testid="stIconMaterial"]):not(code):not(pre):not(pre *):not(code *):not(svg *){
+  font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+}
+[data-testid="stMainBlockContainer"], .block-container{ max-width:1240px !important; padding:4.6rem 2.2rem 5rem !important; }
+h1,h2,h3,h4{ letter-spacing:-.015em; }
+hr{ border-color:var(--border-soft) !important; margin:1.4rem 0 !important; }
+::-webkit-scrollbar{ width:10px; height:10px; } ::-webkit-scrollbar-thumb{ background:var(--surface-3); border-radius:8px; } ::-webkit-scrollbar-track{ background:transparent; }
+
+/* ── top bar ────────────────────────────────────── */
+header[data-testid="stHeader"]{ background:rgba(11,15,20,.82) !important; backdrop-filter:blur(10px); border-bottom:1px solid var(--border-soft) !important; }
+header[data-testid="stHeader"]::after{ content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:linear-gradient(90deg,var(--accent),transparent 65%); }
+[data-testid="stActionButton"], [data-testid="stAppDeployButton"], [data-testid="stSourceButton"],
+[data-testid="stToolbarActionButton"][aria-label="Edit source"], header a[href*="github"],
+header button[title="Favorite"], header button[title="Star"], header button[title="Edit"], header button[title="Edit source"],
+header button[title="Fork this app"], header a[title*="GitHub"], header a[title*="github"], header a[title="View app source"]{ display:none !important; }
+
+/* ── hero ───────────────────────────────────────── */
+.rx-hero{ display:flex; align-items:center; gap:1.1rem; margin:.2rem 0 1rem 0; }
+.rx-logo-chip{ background:#fff; border-radius:12px; padding:7px 13px; display:inline-flex; align-items:center; box-shadow:0 6px 18px rgba(0,0,0,.4); }
+.rx-logo-chip img{ height:30px; width:auto; display:block; }
+.rx-logo-text{ color:#2B2B2B; font-weight:800; letter-spacing:.02em; }
+.rx-hero-title{ font-size:1.6rem; font-weight:700; letter-spacing:-.025em; color:var(--text); line-height:1.15; }
+.rx-hero-sub{ font-size:.88rem; color:var(--muted); margin-top:3px; }
+
+/* ── region switch + info row ───────────────────── */
+.st-key-btn_mcc button, .st-key-btn_cs button{ height:54px !important; border-radius:14px !important; font-size:.98rem !important; font-weight:650 !important; letter-spacing:.01em; }
+.st-key-btn_mcc button[kind="secondary"]:hover{ border-color:#F47920 !important; color:#FF9A4D !important; }
+.st-key-btn_cs  button[kind="secondary"]:hover{ border-color:#2F80ED !important; color:#6AA9F5 !important; }
+.rx-region-row{ display:flex; align-items:center; flex-wrap:wrap; gap:.55rem .85rem; margin:.65rem 0 1.25rem 0; }
+.rx-pill{ display:inline-flex; align-items:center; padding:.26rem .75rem; border-radius:999px; font-size:.76rem; font-weight:700; letter-spacing:.06em; background:var(--accent-soft); color:var(--accent-text); border:1px solid var(--accent-line); }
+.rx-countries{ color:var(--muted); font-size:.86rem; }
+
+/* ── step cards ─────────────────────────────────── */
+[class*="st-key-card_"], [data-testid="stVerticalBlockBorderWrapper"]{
+  background:var(--surface) !important; border:1px solid var(--border) !important; border-radius:18px !important;
+  padding:1.2rem 1.4rem 1.35rem !important; box-shadow:0 12px 32px -16px rgba(0,0,0,.65);
+}
+.rx-step{ display:flex; align-items:center; gap:.85rem; margin:0 0 1rem 0; }
+.rx-step-n{ width:32px; height:32px; flex:0 0 32px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+  background:var(--accent-soft); color:var(--accent-text); border:1px solid var(--accent-line); font-weight:700; font-size:.92rem; }
+.rx-step-t{ font-size:1.12rem; font-weight:650; color:var(--text); line-height:1.2; }
+.rx-step-d{ font-size:.82rem; color:var(--muted); margin-top:2px; }
+.rx-section-gap{ height:1.1rem; }
+
+/* ── buttons ────────────────────────────────────── */
+.stApp button[kind="primary"]{ background:var(--accent) !important; border:1px solid var(--accent) !important; color:#fff !important;
+  border-radius:12px !important; font-weight:650 !important; box-shadow:0 8px 20px -10px var(--accent-line); transition:all .15s ease; }
+.stApp button[kind="primary"]:hover{ background:var(--accent-hover) !important; border-color:var(--accent-hover) !important; transform:translateY(-1px); }
+.stApp button[kind="secondary"]{ background:var(--surface-2) !important; border:1px solid var(--border) !important; color:var(--text) !important;
+  border-radius:12px !important; font-weight:550 !important; transition:all .15s ease; }
+.stApp button[kind="secondary"]:hover{ border-color:var(--accent) !important; color:var(--accent-text) !important; }
+.stApp button:disabled{ opacity:.42 !important; transform:none !important; box-shadow:none !important; }
+
+/* ── native widgets follow the region accent ────── */
+label:has(input[role="switch"])[data-selected="true"] > div:first-of-type{ background-color:var(--accent) !important; }
+label[data-testid="stRadioOption"][data-selected="true"] > div > div:first-child{ background-color:var(--accent) !important; border-color:var(--accent) !important; }
+label[data-baseweb="checkbox"]:has(input:checked) > div:first-of-type,
+label[data-baseweb="radio"]:has(input:checked) > div:first-of-type{ background-color:var(--accent) !important; border-color:var(--accent) !important; }
+.rx-note{ color:var(--muted); font-size:.86rem; margin:.55rem 0 .65rem 0; line-height:1.45; }
+.rx-note strong{ color:var(--text); }
+
+/* ── uploaders ──────────────────────────────────── */
+[data-testid="stFileUploaderDropzone"]{ background:var(--surface-2) !important; border:1.5px dashed var(--border) !important; border-radius:14px !important; padding:1rem 1.1rem !important; transition:all .15s ease; }
+[data-testid="stFileUploaderDropzone"]:hover{ border-color:var(--accent) !important; background:var(--surface-3) !important; }
+[data-testid="stFileChip"]{ background:var(--surface-3) !important; border-radius:10px !important; }
+
+/* ── KPI cards ──────────────────────────────────── */
+[data-testid="stMetric"]{ background:var(--surface-2); border:1px solid var(--border); border-radius:14px; padding:.85rem 1.05rem .8rem 1.2rem; position:relative; overflow:hidden; }
+[data-testid="stMetric"]::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--accent); }
+[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] *{ color:var(--muted) !important; font-size:.78rem !important; letter-spacing:.005em; text-transform:none !important; font-weight:600 !important; }
+[data-testid="stMetricValue"], [data-testid="stMetricValue"] *{ color:var(--text) !important; font-weight:700 !important; font-size:1.65rem !important; letter-spacing:-.02em; }
+[data-testid="stMetricDelta"], [data-testid="stMetricDelta"] *{ font-size:.76rem !important; font-weight:600 !important; }
+
+/* ── alerts / expanders / inputs / tables ───────── */
+[data-testid="stAlert"] > div, [data-testid="stAlertContainer"]{ border-radius:12px !important; padding:.65rem 1rem !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]){ background:rgba(63,185,80,.10) !important; border:1px solid rgba(63,185,80,.30) !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]){ background:rgba(227,179,65,.10) !important; border:1px solid rgba(227,179,65,.32) !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]){ background:rgba(248,81,73,.10) !important; border:1px solid rgba(248,81,73,.34) !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]){ background:var(--accent-soft) !important; border:1px solid var(--accent-line) !important; }
+[data-testid="stExpander"]{ background:var(--surface) !important; border:1px solid var(--border) !important; border-radius:14px !important; overflow:hidden; }
+[data-testid="stExpander"] details summary{ padding:.62rem 1rem !important; font-weight:600; }
+[data-testid="stExpander"] details summary:hover{ background:var(--surface-2); }
+[data-baseweb="select"] > div, [data-baseweb="input"], [data-baseweb="base-input"],
+[data-testid="stTextInputRootElement"], [data-testid="stNumberInputContainer"],
+[data-testid="stSelectbox"] div[role="group"], [data-testid="stMultiSelect"] div[role="group"]{
+  background:var(--surface-2) !important; border:1px solid var(--border) !important; border-radius:10px !important; }
+[data-testid="stTextInputRootElement"]:focus-within, [data-testid="stNumberInputContainer"]:focus-within,
+[data-testid="stSelectbox"] div[role="group"]:focus-within, [data-testid="stMultiSelect"] div[role="group"]:focus-within{ border-color:var(--accent) !important; }
+[data-testid="stMultiSelectTagsContainer"] span[role="group"] > span, [data-baseweb="tag"]{
+  background-color:var(--accent-soft) !important; border:1px solid var(--accent-line) !important; border-radius:8px !important; }
+[data-testid="stMultiSelectTagsContainer"] span[role="group"] > span *, [data-baseweb="tag"] *{ color:var(--accent-text) !important; fill:var(--accent-text) !important; }
+[data-testid="stDataFrame"]{ border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+[data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] label{ color:var(--muted) !important; font-size:.84rem !important; font-weight:500 !important; }
+[data-testid="stCaptionContainer"]{ color:var(--muted) !important; }
+.val-ok{ color:var(--ok); font-weight:650; } .val-err{ color:var(--err); font-weight:650; }
+.rx-val{ display:flex; flex-direction:column; gap:2px; padding:.55rem .85rem; background:var(--surface-2); border:1px solid var(--border); border-radius:12px; }
+.rx-val-meta{ color:var(--muted); font-size:.78rem; }
+[data-testid="stAlertContentInfo"], [data-testid="stAlertContentInfo"] *{ color:var(--text) !important; }
+[data-testid="stAlertContentInfo"] strong{ color:var(--accent-text) !important; }
+.stApp h3{ font-size:1.12rem !important; font-weight:650 !important; }
+
+/* ── confirm card & misc ────────────────────────── */
+.confirm-section{ background:linear-gradient(135deg,var(--ok-soft),rgba(63,185,80,.03)); border:1px solid rgba(63,185,80,.35);
+  border-radius:16px; padding:1rem 1.3rem; margin-top:1.2rem; }
+.confirm-section h3{ color:var(--ok) !important; margin:0 0 .25rem 0 !important; font-size:1.1rem !important; }
+.confirm-section p{ color:var(--muted) !important; margin:0 !important; font-size:.88rem !important; }
+.backlog-card{ background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:.8rem 1rem; }
+
+/* ── sidebar ────────────────────────────────────── */
+section[data-testid="stSidebar"]{ background:#0D1219 !important; border-right:1px solid var(--border-soft) !important; }
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3{ font-size:.7rem !important; letter-spacing:.14em; text-transform:uppercase; color:var(--faint) !important; margin:.4rem 0 .5rem 0 !important; font-weight:700 !important; }
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p{ color:var(--muted); font-size:.86rem; }
+section[data-testid="stSidebar"] [data-testid="stExpander"]{ border-radius:10px !important; background:var(--surface) !important; }
+section[data-testid="stSidebar"] [data-testid="stExpander"] details summary{ padding:.45rem .8rem !important; font-size:.82rem; }
+.rx-sb-logo{ display:flex; justify-content:center; padding:1rem 0 .6rem 0; }
+.rx-sb-logo .rx-logo-chip img{ height:26px; }
+.rx-sep{ height:1px; background:var(--border-soft); margin:1rem 0; }
+.rx-sb-foot{ text-align:center; font-size:.7rem; color:var(--faint) !important; margin:0; }
+
+/* ── footer ─────────────────────────────────────── */
+.rx-footer{ margin-top:3rem; padding:1.4rem 0 0 0; border-top:1px solid var(--border-soft); text-align:center; }
+.rx-footer p{ color:var(--faint) !important; font-size:.76rem !important; margin:.15rem 0 !important; }
+.rx-footer .rx-conf{ font-weight:700; color:var(--accent-text) !important; text-transform:uppercase; letter-spacing:.12em; font-size:.7rem !important; }
+"""
+st.markdown("<style>" + APP_CSS + "</style>", unsafe_allow_html=True)
+
+
+def _install_width_compat():
+    """Newer Streamlit deprecates `use_container_width=True` in favour of `width="stretch"`. One compatibility
+    layer for the whole app: try the new argument first and fall back to the old one on older versions."""
+    if getattr(st, "_rx_width_compat", False):
+        return
+    for _name in ("button", "download_button", "dataframe"):
+        _fn = getattr(st, _name, None)
+        if _fn is None:
+            continue
+        def _make(fn):
+            def wrapper(*a, **kw):
+                if kw.pop("use_container_width", False):
+                    try:
+                        return fn(*a, width="stretch", **kw)
+                    except (TypeError, StreamlitAPIException):
+                        return fn(*a, use_container_width=True, **kw)
+                return fn(*a, **kw)
+            wrapper.__name__ = getattr(fn, "__name__", "wrapper")
+            wrapper.__doc__ = getattr(fn, "__doc__", None)
+            return wrapper
+        setattr(st, _name, _make(_fn))
+    st._rx_width_compat = True
+
+_install_width_compat()
+
+
+def _card(key):
+    """A bordered step card. Newer Streamlit lets a container carry a key (used as a CSS hook)."""
+    try:
+        return st.container(border=True, key=key)
+    except TypeError:
+        return st.container(border=True)
+
+
+def _step(n, title, desc=""):
+    """Numbered step header used at the top of each card."""
+    st.markdown(
+        f'<div class="rx-step"><div class="rx-step-n">{n}</div><div><div class="rx-step-t">{title}</div>'
+        + (f'<div class="rx-step-d">{desc}</div>' if desc else '') + '</div></div>',
+        unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────
 # Constants
@@ -569,6 +616,17 @@ else:
 
 
 # ──────────────────────────────────────────────
+# Header
+# ──────────────────────────────────────────────
+_logo_chip = (f'<div class="rx-logo-chip"><img src="data:image/png;base64,{LOGO_B64}" alt="Ruvixx"></div>'
+              if LOGO_B64 else '<div class="rx-logo-chip rx-logo-text">ruvixx</div>')
+st.markdown(
+    '<div class="rx-hero">' + _logo_chip +
+    '<div><div class="rx-hero-title">Prebatch Generator</div>'
+    '<div class="rx-hero-sub">Build, review and register Prebatch / Precheck files for the Master Sheet</div></div></div>',
+    unsafe_allow_html=True)
+
+# ──────────────────────────────────────────────
 # History Load Status Banner
 # ──────────────────────────────────────────────
 if st.session_state.history_load_ok:
@@ -592,36 +650,19 @@ else:
 
 
 # ──────────────────────────────────────────────
-# Title Bar
-# ──────────────────────────────────────────────
-logo_html = (f'<div class="rx-logo"><img src="data:image/png;base64,{LOGO_B64}" alt="Ruvixx"></div>'
-             if LOGO_B64 else "")
-st.markdown(f"""
-<div class="rx-title-bar">
-    {logo_html}
-    <div class="rx-text">
-        <h1>Prebatch / Precheck File Generator</h1>
-        <p>Upload three source files to generate the Prebatch output for Master Sheet upload</p>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-# ──────────────────────────────────────────────
 # Sidebar
 # ──────────────────────────────────────────────
 with st.sidebar:
     if LOGO_B64:
         st.markdown(
-            f'<div style="text-align:center;padding:1.2rem 0 0.6rem 0;">'
-            f'<img src="data:image/png;base64,{LOGO_B64}" style="height:36px;width:auto;"></div>',
+            f'<div class="rx-sb-logo"><div class="rx-logo-chip"><img src="data:image/png;base64,{LOGO_B64}" alt="Ruvixx"></div></div>',
             unsafe_allow_html=True,
         )
-    st.markdown('<hr style="margin:0.4rem 0 1.2rem 0;border:none;border-top:1px solid #3A3A3A;">', unsafe_allow_html=True)
 
     if DOC_B64:
         st.markdown(
-            '<p style="color:#B0B0B0 !important;font-size:0.82rem;margin:0 0 0.4rem 0;'
-            'font-weight:600;letter-spacing:0.2px;">See Documentation</p>',
+            '<p style="color:#62758C !important;font-size:0.7rem;margin:0 0 0.45rem 0;'
+            'font-weight:700;letter-spacing:0.14em;text-transform:uppercase;">Documentation</p>',
             unsafe_allow_html=True,
         )
         components.html(f"""
@@ -632,11 +673,11 @@ with st.sidebar:
                 background-color: #F47920;
                 color: #ffffff;
                 border: none;
-                border-radius: 6px;
-                padding: 0.55rem 1rem;
+                border-radius: 10px;
+                padding: 0.62rem 1rem;
                 font-size: 0.82rem;
                 font-weight: 600;
-                font-family: 'Source Sans Pro', sans-serif;
+                font-family: Inter, 'Segoe UI', system-ui, sans-serif;
                 cursor: pointer;
                 letter-spacing: 0.3px;
                 transition: background-color 0.2s;
@@ -659,7 +700,7 @@ with st.sidebar:
             }}
         </script>
         """, height=46)
-    st.markdown('<hr style="margin:1.2rem 0 0.8rem 0;border:none;border-top:1px solid #3A3A3A;">', unsafe_allow_html=True)
+    st.markdown('<div class="rx-sep"></div>', unsafe_allow_html=True)
 
     # ── Delivery History (persistent) ──
     st.markdown("### Delivery History")
@@ -707,7 +748,7 @@ with st.sidebar:
         else:
             st.caption(f"{reg}: History unavailable: GitHub is not connected (see the warning at the top)." if not st.session_state.history_load_ok else f"{reg}: No deliveries confirmed yet.")
 
-    st.markdown('<hr style="margin:1.2rem 0 0.8rem 0;border:none;border-top:1px solid #3A3A3A;">', unsafe_allow_html=True)
+    st.markdown('<div class="rx-sep"></div>', unsafe_allow_html=True)
 
     # ── Session Generation Log ──
     st.markdown("### Session Log")
@@ -732,10 +773,9 @@ with st.sidebar:
             st.session_state.generation_log = []
             st.rerun()
 
-    st.markdown('<hr style="margin:1.2rem 0 0.8rem 0;border:none;border-top:1px solid #3A3A3A;">', unsafe_allow_html=True)
+    st.markdown('<div class="rx-sep"></div>', unsafe_allow_html=True)
     st.markdown(
-        '<p style="text-align:center;font-size:0.72rem;color:#666 !important;margin:0;">'
-        'Prebatch Generator v1.2 &middot; May 2026</p>',
+        f'<p class="rx-sb-foot">Prebatch Generator v2.0<br>Streamlit {st.__version__}</p>',
         unsafe_allow_html=True,
     )
 
@@ -751,7 +791,7 @@ if "region_choice" not in st.session_state:
 rc1, rc2 = st.columns(2)
 with rc1:
     if st.button(
-        "🟠  MCC — México Central Caribe",
+        "MCC · México Central Caribe",
         use_container_width=True,
         type="primary" if st.session_state.region_choice == "MCC" else "secondary",
         key="btn_mcc",
@@ -760,7 +800,7 @@ with rc1:
         st.rerun()
 with rc2:
     if st.button(
-        "🔵  CS — Cono Sur",
+        "CS · Cono Sur",
         use_container_width=True,
         type="primary" if st.session_state.region_choice == "CS" else "secondary",
         key="btn_cs",
@@ -770,43 +810,19 @@ with rc2:
 
 region_code = st.session_state.region_choice
 
-# Inject region-specific CSS overrides so primary button reflects region colour
-if region_code == "CS":
-    st.markdown("""
-    <style>
-        button[kind="primary"] {
-            background-color: #1E6FBF !important;
-            border-color: #1E6FBF !important;
-        }
-        button[kind="primary"]:hover {
-            background-color: #155A9C !important;
-            border-color: #155A9C !important;
-        }
-        [data-testid="stMetric"] { border-top-color: #1E6FBF !important; }
-    </style>
-    """, unsafe_allow_html=True)
+# Region accent colour: drives primary buttons, KPI accents, step badges and the top bar
+_ACCENTS = {"MCC": ("#F47920", "#FF8C3A", "#FF9A4D", "rgba(244,121,32,.14)", "rgba(244,121,32,.55)"),
+            "CS":  ("#2F80ED", "#4A93F5", "#6AA9F5", "rgba(47,128,237,.15)", "rgba(47,128,237,.55)")}
+_a = _ACCENTS[region_code]
+st.markdown(f"<style>:root{{--accent:{_a[0]};--accent-hover:{_a[1]};--accent-text:{_a[2]};--accent-soft:{_a[3]};--accent-line:{_a[4]};}}</style>",
+            unsafe_allow_html=True)
 
-# Region indicator banner
-if region_code == "MCC":
-    st.markdown("""
-    <div class="rx-region-mcc">
-        <span class="rx-region-badge-mcc">MCC</span>
-        <div class="rx-region-text">
-            <h3>México Central Caribe</h3>
-            <p>Mexico · Costa Rica · Panama · Dominican Republic · Honduras · Belize · Guatemala · Nicaragua · El Salvador</p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-else:
-    st.markdown("""
-    <div class="rx-region-cs">
-        <span class="rx-region-badge-cs">CS</span>
-        <div class="rx-region-text">
-            <h3>Cono Sur</h3>
-            <p>Chile · Argentina · Colombia · Ecuador · Peru · Uruguay · Bolivia · Paraguay</p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+# Region info row
+_REGION_INFO = {"MCC": "Mexico · Costa Rica · Panama · Dominican Republic · Honduras · Belize · Guatemala · Nicaragua · El Salvador",
+                "CS":  "Chile · Argentina · Colombia · Ecuador · Peru · Uruguay · Bolivia · Paraguay"}
+st.markdown(f'<div class="rx-region-row"><span class="rx-pill">{region_code}</span>'
+            f'<span class="rx-countries">{_REGION_INFO[region_code]}</span></div>', unsafe_allow_html=True)
+
 
 # Reset validation when region changes
 if st.session_state.get("_last_region") != region_code:
@@ -817,26 +833,26 @@ if st.session_state.get("_last_region") != region_code:
     st.session_state.prebatch_ready_to_confirm = False
     st.session_state._last_region = region_code
 
-st.divider()
-
-# ── File Uploaders (mode-specific) ──
-st.subheader("Upload Source Files")
-col1, col2, col3 = st.columns(3)
-with col1:
-    qs_files = st.file_uploader(
-        "QS Delivery ID File",
-        type=["csv","xlsx","xls"],
-        accept_multiple_files=True,
-        help="Upload one or more QS Delivery ID files. Multiple files are merged into one before processing.",
-    )
-with col2:
-    pl_file = st.file_uploader("PL Batch File (Pleteo Export)", type=["csv","xlsx","xls"],
-        help="CRM export providing the 'Updated' timestamp for Last Updated At (MCC).")
-with col3:
-    pc_file = st.file_uploader("Conflict Check File", type=["csv","xlsx","xls"],
-        help="Investigation data: machine overviews, notes, entity details, and case attribution.")
-if qs_files and len(qs_files) > 1:
-    st.info(f"📎 **{len(qs_files)} QS files uploaded** — they will be merged into one before processing.")
+# ── Step 1 — Source files (card) ──
+with _card("card_files"):
+    _step(1, "Source files", "Upload the three exports. Several QS files are merged automatically.")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        qs_files = st.file_uploader(
+            "QS Delivery ID File",
+            type=["csv","xlsx","xls"],
+            accept_multiple_files=True,
+            help="Upload one or more QS Delivery ID files. Multiple files are merged into one before processing.",
+        )
+    with col2:
+        pl_file = st.file_uploader("PL Batch File (Pleteo Export)", type=["csv","xlsx","xls"],
+            help="CRM export providing the 'Updated' timestamp for Last Updated At (MCC).")
+    with col3:
+        pc_file = st.file_uploader("Conflict Check File", type=["csv","xlsx","xls"],
+            help="Investigation data: machine overviews, notes, entity details, and case attribution.")
+    if qs_files and len(qs_files) > 1:
+        st.info(f"📎 **{len(qs_files)} QS files uploaded** — they will be merged into one before processing.")
+    _files_val = st.container()          # file-validation chips are drawn here (see the processing area)
 
 # ──────────────────────────────────────────────
 # Helper Functions
@@ -874,12 +890,12 @@ def show_validation(uploaded_file, required_cols, label):
         df = clean_df(read_file(uploaded_file))
         ok, missing = validate_file(df, required_cols)
         if ok:
-            st.markdown(f'<span class="val-ok">✔ {label}</span> — {len(df)} rows, {len(df.columns)} columns', unsafe_allow_html=True)
+            st.markdown(f'<div class="rx-val"><span class="val-ok">✔ {label}</span><span class="rx-val-meta">{len(df):,} rows · {len(df.columns)} columns</span></div>', unsafe_allow_html=True)
         else:
-            st.markdown(f'<span class="val-err">✘ {label}</span> — missing: `{"`, `".join(sorted(missing))}`', unsafe_allow_html=True)
+            st.markdown(f'<div class="rx-val"><span class="val-err">✘ {label}</span><span class="rx-val-meta">missing: {", ".join(sorted(missing))}</span></div>', unsafe_allow_html=True)
         return df, ok
     except Exception as e:
-        st.markdown(f'<span class="val-err">✘ {label}</span> — could not read file: {e}', unsafe_allow_html=True)
+        st.markdown(f'<div class="rx-val"><span class="val-err">✘ {label}</span><span class="rx-val-meta">could not read file: {e}</span></div>', unsafe_allow_html=True)
         return None, False
 
 def normalize_date(value: str) -> str:
@@ -1606,18 +1622,6 @@ def next_batch_number(region):
 
 
 # ──────────────────────────────────────────────
-_batch_cls = "batch-section-mcc" if region_code == "MCC" else "batch-section-cs"
-st.markdown("")
-st.markdown(f"""
-<div class="{_batch_cls}">
-    <h3>📦 Batch Distribution</h3>
-    <p>Optional tool to automatically distribute large Pleteo exports by country group and quota,
-       without manually selecting cases. Use this when working with large batches where cases
-       haven't been pre-selected. If cases were already manually curated for delivery,
-       skip this section and proceed directly to Generate.</p>
-</div>
-""", unsafe_allow_html=True)
-st.markdown("")
 
 # ── Fixed vs Percentage group distribution: helpers ──────────────────────
 def _largest_remainder(total, weights):
@@ -1942,731 +1946,539 @@ def _push_profiles():
     return ok, err
 
 
-enable_batch = st.toggle(
-    "Enable Batch Distribution",
-    value=False, key="batch_toggle",
-    help=(
-        "Use this when you have a large Pleteo export and want the app to automatically "
-        "select cases by country group and quota. "
-        "If you've already manually selected the cases for this delivery, leave this off."
-    ),
-)
-
-dist_problem = None   # why the chosen profile cannot be turned into quotas (blocks Generate)
-
-if enable_batch:
-    st.info(
-        "💡 **About Batch Distribution:** This tool helps deliver large batches from a full "
-        "Pleteo case export without manually picking cases. It selects cases automatically based "
-        "on country group quotas. If you already have a curated list of cases for this batch, "
-        "you don't need to use this — simply generate the Prebatch file directly.",
-        icon=None,
-    )
-
-    _rp_for_config = region_code
-    _region_profiles = get_profile_names(_rp_for_config)
-    _default_name = st.session_state.dist_defaults.get(_rp_for_config)
-
-    # After a save the dropdown key changes, so `index` takes effect and lands on the saved profile
-    _pending = st.session_state.pop("_pending_dist_select", None)
-    if _pending and _pending in _region_profiles:
-        _select_idx = _region_profiles.index(_pending)
-    elif _default_name in _region_profiles:
-        _select_idx = _region_profiles.index(_default_name)
-    else:
-        _select_idx = 0
-
-    _action_err = None
-    ps_col, def_col, del_col = st.columns([3, 1.2, 1])
-    with ps_col:
-        selected_profile_name = st.selectbox("Distribution Profile", options=_region_profiles,
-                                              index=_select_idx, key=f"dist_select_{st.session_state.dist_nav}")
-    with def_col:
-        _is_default = (st.session_state.dist_defaults.get(_rp_for_config) == selected_profile_name)
-        st.markdown("<br>", unsafe_allow_html=True)
-        if _is_default:
-            st.success("Default ✓")
-        else:
-            if st.button("Set as Default", key="set_default_btn", use_container_width=True):
-                _snap = _profile_snapshot()
-                set_default(_rp_for_config, selected_profile_name)
-                _ok, _err = _push_profiles()
-                if _ok:
-                    st.rerun()
-                _profile_restore(_snap)
-                _action_err = f"❌ Not saved: GitHub could not be updated, so the default was not changed. {_err}"
-    with del_col:
-        st.markdown("<br>", unsafe_allow_html=True)
-        if len(_region_profiles) > 1:
-            if st.button("🗑 Delete", key="del_profile_btn", use_container_width=True):
-                _snap = _profile_snapshot()
-                delete_profile(_rp_for_config, selected_profile_name)
-                _ok, _err = _push_profiles()
-                if _ok:
-                    st.session_state.dist_nav += 1
-                    st.rerun()
-                _profile_restore(_snap)
-                _action_err = f"❌ Not deleted: GitHub could not be updated, so nothing was changed. {_err}"
-        else:
-            st.button("🗑 Delete", disabled=True, use_container_width=True, key="del_profile_dis")
-    if _action_err:
-        st.error(_action_err)
-
-    _selected_profile = get_profile(_rp_for_config, selected_profile_name)
-    if _selected_profile is None:
-        st.error("Profile not found. Please select another.")
-        st.stop()
-
-    _ed = st.session_state.editor_profile
-    if (_ed is None or _ed.get("_editing_name") != selected_profile_name
-            or _ed.get("_editing_region") != _rp_for_config):
-        _loaded = normalize_profile(_selected_profile)
-        _loaded["_editing_name"] = selected_profile_name
-        _loaded["_editing_region"] = _rp_for_config
-        st.session_state.editor_profile = _loaded
-        st.session_state.editor_rev += 1          # fresh editor widgets for the profile just loaded
-    ep = st.session_state.editor_profile
-
-    # ── Group distribution mode (stored in the profile) ──
-    MODE_LABELS = {
-        "fixed":      "Fixed — a case count per group",
-        "percentage": "Percentage — a share (%) of the batch total per group",
-    }
-    _mode = st.radio(
-        "Group distribution", options=list(MODE_LABELS),
-        format_func=lambda k: MODE_LABELS[k],
-        index=0 if ep.get("mode", "fixed") == "fixed" else 1,
-        horizontal=True, key=_wk("ep_mode"),
+with _card("card_dist"):
+    _step(2, "Batch distribution", "Optional. Let the app pick the cases by country group and quota from a large export. If you already curated the batch, leave it off.")
+    enable_batch = st.toggle(
+        "Enable Batch Distribution",
+        value=False, key="batch_toggle",
         help=(
-            "**Fixed:** you set how many cases each group receives.\n\n"
-            "**Percentage:** you enter the batch total once and a percentage per group. The app turns "
-            "that into whole-case quotas: every share is rounded down, then the leftover cases go to the "
-            "groups with the biggest fractional parts, so the quotas always add up to your total."
-        ),
-    )
-    if _mode != ep.get("mode", "fixed"):
-        _sync_ep_from_widgets(ep)                 # keep edits made under the old mode
-        _convert_mode(ep, _mode)
-        st.session_state.editor_rev += 1
-        st.rerun()
-
-    if ep["mode"] == "percentage":
-        ep["total"] = int(st.number_input(
-            "Total cases for this batch", min_value=1, max_value=2000,
-            value=min(int(ep.get("total") or 1), 2000), step=1, key=_wk("ep_total"),
-            help="How many cases this delivery needs. Press Update Profile to keep it as the profile's "
-                 "default; otherwise it applies to this delivery only.",
-        ))
-
-    # ── Case criteria (stored in the profile): TWD and Vintage ──
-    st.markdown("**Case criteria** — considered only when the batch list is generated. They don't add "
-                "cases or groups; they steer which cases fill each country group's quota.")
-    _cr1, _cr2 = st.columns(2)
-    with _cr1:
-        ep["twd"]["enabled"] = st.toggle(
-            "TWD — cases tagged “Relaunch”", value=bool(ep["twd"]["enabled"]), key=_wk("ep_twd_on"),
-            help="Cases whose Pleteo tags include “Relaunch”. Limits how many of them the batch may "
-                 "contain. Needs the Tags column in the Pleteo export.")
-        ep["twd"]["percent"] = float(st.number_input(
-            "TWD: maximum % of the batch", min_value=0.0, max_value=100.0, value=float(ep["twd"]["percent"]),
-            step=1.0, format="%.1f", key=_wk("ep_twd_pct"), disabled=not ep["twd"]["enabled"],
-            help="A hard cap, split across the country groups in proportion to their quotas."))
-    with _cr2:
-        ep["vintage"]["enabled"] = st.toggle(
-            "Vintage — old cases", value=bool(ep["vintage"]["enabled"]), key=_wk("ep_vin_on"),
-            help="Cases whose last event is in or before the cutoff year. They are picked first until "
-                 "the target is met; a warning shows if there aren't enough.")
-        _vc1, _vc2 = st.columns(2)
-        with _vc1:
-            ep["vintage"]["percent"] = float(st.number_input(
-                "Vintage: target % of the batch", min_value=0.0, max_value=100.0,
-                value=float(ep["vintage"]["percent"]), step=1.0, format="%.1f", key=_wk("ep_vin_pct"),
-                disabled=not ep["vintage"]["enabled"]))
-        with _vc2:
-            ep["vintage"]["year"] = int(st.number_input(
-                "Cutoff year", min_value=1990, max_value=2100, value=int(ep["vintage"]["year"]),
-                step=1, key=_wk("ep_vin_year"), disabled=not ep["vintage"]["enabled"],
-                help="A case is vintage when its last event year is this year or earlier."))
-
-    BATCH_TYPE_OPTIONS = {
-        "standard":    "📊 Batch Standard — Fill by country availability (no machine filter)",
-        "low":         "🔵 Batch Low — Cases with < 3 machines only",
-        "traditional": "🟡 Batch Traditional — 50% cases with 3+ machines, rest with 1–2 machines",
-        "golden":      "🟠 Batch Golden — 100% cases with 3+ machines (overflow with anything if needed)",
-    }
-
-    batch_type = st.radio(
-        "Batch Type",
-        options=list(BATCH_TYPE_OPTIONS.keys()),
-        format_func=lambda k: BATCH_TYPE_OPTIONS[k],
-        index=0,
-        key="batch_type_radio",
-        help=(
-            "**Standard** — Default. Fill by country quota, no machine filtering.\n\n"
-            "**Low** — Only selects cases with < 3 Total Machines.\n\n"
-            "**Traditional** — First fills 50% of the total quota with 3+ machine cases "
-            "(by country), then completes with 1–2 machine cases.\n\n"
-            "**Golden** — Selects only 3+ machine cases. Falls back to any available cases "
-            "only if the quota cannot be met with 3+ cases alone (warning shown)."
+            "Use this when you have a large Pleteo export and want the app to automatically "
+            "select cases by country group and quota. "
+            "If you've already manually selected the cases for this delivery, leave this off."
         ),
     )
 
-    with st.expander("✏️ Edit Profile", expanded=False):
-        ep["name"] = st.text_input("Profile Name", value=ep["name"], key=_wk("ep_name"))
-        _pct = ep["mode"] == "percentage"
-        st.markdown("**Groups** — " + ("set the countries and the share (%) of the batch each group receives."
-                                       if _pct else "set countries and quota for each group."))
-        country_list = MCC_COUNTRIES if _rp_for_config == "MCC" else CS_COUNTRIES
+    dist_problem = None   # why the chosen profile cannot be turned into quotas (blocks Generate)
 
-        groups_to_delete = []
-        for gi, grp in enumerate(ep["groups"]):
-            other_used = {c for gj, grp_j in enumerate(ep["groups"])
-                          if gj != gi for c in grp_j.get("countries", [])}
-            available_options = [c for c in country_list if c not in other_used]
-            current_selection = [c for c in grp.get("countries", []) if c in available_options]
-            with st.container():
-                gc1, gc2, gc3, gc4 = st.columns([2.5, 3, 1.2, 0.5])
-                with gc1:
-                    grp["name"] = st.text_input("Group Name", value=grp["name"],
-                                                 key=_wk("gname", gi), label_visibility="collapsed")
-                with gc2:
-                    grp["countries"] = st.multiselect(
-                        "Countries", options=available_options, default=current_selection,
-                        key=_wk("gcountries", gi), label_visibility="collapsed",
-                        help="Countries already assigned to another group are hidden.",
-                    )
-                with gc3:
-                    if _pct:
-                        grp["percent"] = float(st.number_input(
-                            "Percent", min_value=0.0, max_value=100.0, value=float(grp.get("percent", 0.0)),
-                            step=0.5, format="%.2f", key=_wk("gpct", gi), label_visibility="collapsed",
-                            help="This group's share of the batch total, in %."))
-                    else:
-                        grp["quota"] = st.number_input("Quota", min_value=1, max_value=500,
-                                                        value=int(grp["quota"]), step=1,
-                                                        key=_wk("gquota", gi), label_visibility="collapsed")
-                with gc4:
-                    if st.button("✕", key=f"gdel_{gi}", help="Remove this group"):
-                        groups_to_delete.append(gi)
+    if enable_batch:
+        st.info(
+            "💡 **About Batch Distribution:** This tool helps deliver large batches from a full "
+            "Pleteo case export without manually picking cases. It selects cases automatically based "
+            "on country group quotas. If you already have a curated list of cases for this batch, "
+            "you don't need to use this — simply generate the Prebatch file directly.",
+            icon=None,
+        )
 
-        if groups_to_delete:
-            _sync_ep_from_widgets(ep)
-            for gi in reversed(groups_to_delete):
-                ep["groups"].pop(gi)
-            st.session_state.editor_rev += 1      # widgets are keyed by position: rebuild them
-            st.rerun()
+        _rp_for_config = region_code
+        _region_profiles = get_profile_names(_rp_for_config)
+        _default_name = st.session_state.dist_defaults.get(_rp_for_config)
 
-        if _pct:
-            _pcts = [g.get("percent", 0.0) for g in ep["groups"]]
-            _pmsg = percent_problem(_pcts)
-            if _pmsg:
-                st.error(f"🚫 {_pmsg}")
+        # After a save the dropdown key changes, so `index` takes effect and lands on the saved profile
+        _pending = st.session_state.pop("_pending_dist_select", None)
+        if _pending and _pending in _region_profiles:
+            _select_idx = _region_profiles.index(_pending)
+        elif _default_name in _region_profiles:
+            _select_idx = _region_profiles.index(_default_name)
+        else:
+            _select_idx = 0
+
+        _action_err = None
+        ps_col, def_col, del_col = st.columns([3, 1.2, 1])
+        with ps_col:
+            selected_profile_name = st.selectbox("Distribution Profile", options=_region_profiles,
+                                                  index=_select_idx, key=f"dist_select_{st.session_state.dist_nav}")
+        with def_col:
+            _is_default = (st.session_state.dist_defaults.get(_rp_for_config) == selected_profile_name)
+            st.markdown("<br>", unsafe_allow_html=True)
+            if _is_default:
+                st.success("Default ✓")
             else:
-                _qs = quotas_from_percent(ep["total"], _pcts)
-                st.success("✅ Percentages add up to 100%.")
-                st.markdown(f"**Resulting cases** (total {sum(_qs)}): "
-                            + " · ".join(f"{g['name']} **{n}**" for g, n in zip(ep["groups"], _qs)))
-                for g, n in zip(ep["groups"], _qs):
-                    if n == 0:
-                        st.warning(f"Group **{g['name']}** rounds to 0 cases.")
-        else:
-            total_quota = sum(g["quota"] for g in ep["groups"])
-            st.caption(f"Total quota across all groups: **{total_quota}** cases")
+                if st.button("Set as Default", key="set_default_btn", use_container_width=True):
+                    _snap = _profile_snapshot()
+                    set_default(_rp_for_config, selected_profile_name)
+                    _ok, _err = _push_profiles()
+                    if _ok:
+                        st.rerun()
+                    _profile_restore(_snap)
+                    _action_err = f"❌ Not saved: GitHub could not be updated, so the default was not changed. {_err}"
+        with del_col:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if len(_region_profiles) > 1:
+                if st.button("🗑 Delete", key="del_profile_btn", use_container_width=True):
+                    _snap = _profile_snapshot()
+                    delete_profile(_rp_for_config, selected_profile_name)
+                    _ok, _err = _push_profiles()
+                    if _ok:
+                        st.session_state.dist_nav += 1
+                        st.rerun()
+                    _profile_restore(_snap)
+                    _action_err = f"❌ Not deleted: GitHub could not be updated, so nothing was changed. {_err}"
+            else:
+                st.button("🗑 Delete", disabled=True, use_container_width=True, key="del_profile_dis")
+        if _action_err:
+            st.error(_action_err)
 
-        if st.button("＋ Add Group", key="add_group_btn"):
-            _sync_ep_from_widgets(ep)
-            ep["groups"].append({"name": "New Group", "countries": [], "quota": 10, "percent": 0.0})
+        _selected_profile = get_profile(_rp_for_config, selected_profile_name)
+        if _selected_profile is None:
+            st.error("Profile not found. Please select another.")
+            st.stop()
+
+        _ed = st.session_state.editor_profile
+        if (_ed is None or _ed.get("_editing_name") != selected_profile_name
+                or _ed.get("_editing_region") != _rp_for_config):
+            _loaded = normalize_profile(_selected_profile)
+            _loaded["_editing_name"] = selected_profile_name
+            _loaded["_editing_region"] = _rp_for_config
+            st.session_state.editor_profile = _loaded
+            st.session_state.editor_rev += 1          # fresh editor widgets for the profile just loaded
+        ep = st.session_state.editor_profile
+
+        # ── Group distribution mode (stored in the profile) ──
+        MODE_LABELS = {
+            "fixed":      "Fixed — a case count per group",
+            "percentage": "Percentage — a share (%) of the batch total per group",
+        }
+        _mode = st.radio(
+            "Group distribution", options=list(MODE_LABELS),
+            format_func=lambda k: MODE_LABELS[k],
+            index=0 if ep.get("mode", "fixed") == "fixed" else 1,
+            horizontal=True, key=_wk("ep_mode"),
+            help=(
+                "**Fixed:** you set how many cases each group receives.\n\n"
+                "**Percentage:** you enter the batch total once and a percentage per group. The app turns "
+                "that into whole-case quotas: every share is rounded down, then the leftover cases go to the "
+                "groups with the biggest fractional parts, so the quotas always add up to your total."
+            ),
+        )
+        if _mode != ep.get("mode", "fixed"):
+            _sync_ep_from_widgets(ep)                 # keep edits made under the old mode
+            _convert_mode(ep, _mode)
             st.session_state.editor_rev += 1
             st.rerun()
 
-        st.markdown("---")
-        _save_err = None
-        save_col, saveas_col = st.columns(2)
+        if ep["mode"] == "percentage":
+            ep["total"] = int(st.number_input(
+                "Total cases for this batch", min_value=1, max_value=2000,
+                value=min(int(ep.get("total") or 1), 2000), step=1, key=_wk("ep_total"),
+                help="How many cases this delivery needs. Press Update Profile to keep it as the profile's "
+                     "default; otherwise it applies to this delivery only.",
+            ))
 
-        with save_col:
-            if st.button("💾 Update Profile", type="primary", use_container_width=True, key="save_profile"):
-                _sync_ep_from_widgets(ep)
-                _old = ep.get("_editing_name", "")
-                _new_name = str(ep.get("name", "")).strip()
-                _problem = _profile_save_problem(ep)
-                if not _problem and _new_name != _old and _new_name in get_profile_names(_rp_for_config):
-                    _problem = f"A profile named “{_new_name}” already exists. Pick another name."
-                if _problem:
-                    _save_err = f"🚫 Not saved. {_problem}"
-                else:
-                    ep["name"] = _new_name
-                    _to_save = _final_profile_for_save(ep)
-                    _snap = _profile_snapshot()
-                    _was_default = st.session_state.dist_defaults.get(_rp_for_config) == _old
-                    replace_profile(_rp_for_config, _old, _to_save)
-                    if _was_default and _old != _new_name:
-                        set_default(_rp_for_config, _new_name)
-                    _ok, _err = _push_profiles()
-                    if _ok:
-                        ep["_editing_name"] = _new_name
-                        st.session_state["_pending_dist_select"] = _new_name
-                        st.session_state.dist_nav += 1
-                        st.session_state.editor_rev += 1
-                        st.toast(f"✅ Profile **{_new_name}** updated.", icon="✅")
-                        st.rerun()
-                    _profile_restore(_snap)
-                    _save_err = f"❌ Not saved: GitHub could not be updated, so nothing was changed. {_err}"
+        # ── Case criteria (stored in the profile): TWD and Vintage ──
+        st.markdown('<div class="rx-note"><strong>Case criteria</strong> — considered only when the batch list is generated. '
+                    "They don't add cases or groups; they steer which cases fill each country group's quota.</div>",
+                    unsafe_allow_html=True)
+        _cr1, _cr2 = st.columns(2)
+        with _cr1:
+            ep["twd"]["enabled"] = st.toggle(
+                "TWD — cases tagged “Relaunch”", value=bool(ep["twd"]["enabled"]), key=_wk("ep_twd_on"),
+                help="Cases whose Pleteo tags include “Relaunch”. Limits how many of them the batch may "
+                     "contain. Needs the Tags column in the Pleteo export.")
+            ep["twd"]["percent"] = float(st.number_input(
+                "TWD: maximum % of the batch", min_value=0.0, max_value=100.0, value=float(ep["twd"]["percent"]),
+                step=1.0, format="%.1f", key=_wk("ep_twd_pct"), disabled=not ep["twd"]["enabled"],
+                help="A hard cap, split across the country groups in proportion to their quotas."))
+        with _cr2:
+            ep["vintage"]["enabled"] = st.toggle(
+                "Vintage — old cases", value=bool(ep["vintage"]["enabled"]), key=_wk("ep_vin_on"),
+                help="Cases whose last event is in or before the cutoff year. They are picked first until "
+                     "the target is met; a warning shows if there aren't enough.")
+            _vc1, _vc2 = st.columns(2)
+            with _vc1:
+                ep["vintage"]["percent"] = float(st.number_input(
+                    "Vintage: target % of the batch", min_value=0.0, max_value=100.0,
+                    value=float(ep["vintage"]["percent"]), step=1.0, format="%.1f", key=_wk("ep_vin_pct"),
+                    disabled=not ep["vintage"]["enabled"]))
+            with _vc2:
+                ep["vintage"]["year"] = int(st.number_input(
+                    "Cutoff year", min_value=1990, max_value=2100, value=int(ep["vintage"]["year"]),
+                    step=1, key=_wk("ep_vin_year"), disabled=not ep["vintage"]["enabled"],
+                    help="A case is vintage when its last event year is this year or earlier."))
 
-        with saveas_col:
-            st.text_input("Save as new profile name", key=_wk("saveas_name"),
-                          placeholder="New profile name…")
-            if st.button("💾 Save as New", use_container_width=True, key="saveas_btn"):
-                _clean = st.session_state.get(_wk("saveas_name"), "").strip()
-                _sync_ep_from_widgets(ep)
-                if not _clean:
-                    _problem = "Enter a name for the new profile."
-                elif _clean in get_profile_names(_rp_for_config):
-                    _problem = f"A profile named “{_clean}” already exists. Choose a different name."
-                else:
-                    _tmp = copy.deepcopy(ep)
-                    _tmp["name"] = _clean
-                    _problem = _profile_save_problem(_tmp)
-                if _problem:
-                    _save_err = f"🚫 Not saved. {_problem}"
-                else:
-                    _new_p = _final_profile_for_save({**ep, "name": _clean})
-                    _snap = _profile_snapshot()
-                    st.session_state.dist_profiles.setdefault(_rp_for_config, []).append(copy.deepcopy(_new_p))
-                    _ok, _err = _push_profiles()
-                    if _ok:
-                        _new_ep = normalize_profile(_new_p)
-                        _new_ep["_editing_name"] = _clean
-                        _new_ep["_editing_region"] = _rp_for_config
-                        st.session_state.editor_profile = _new_ep
-                        st.session_state["_pending_dist_select"] = _clean
-                        st.session_state.dist_nav += 1
-                        st.session_state.editor_rev += 1
-                        st.toast(f"✅ New profile **{_clean}** created.", icon="✅")
-                        st.rerun()
-                    _profile_restore(_snap)
-                    _save_err = f"❌ Not saved: GitHub could not be updated, so nothing was changed. {_err}"
-        if _save_err:
-            st.error(_save_err)
+        BATCH_TYPE_OPTIONS = {
+            "standard":    "📊 Batch Standard — Fill by country availability (no machine filter)",
+            "low":         "🔵 Batch Low — Cases with < 3 machines only",
+            "traditional": "🟡 Batch Traditional — 50% cases with 3+ machines, rest with 1–2 machines",
+            "golden":      "🟠 Batch Golden — 100% cases with 3+ machines (overflow with anything if needed)",
+        }
 
-    with st.expander("⬆ Import / Export Profiles (JSON)", expanded=False):
-        exp_col, imp_col = st.columns(2)
-        with exp_col:
-            st.download_button("⬇ Export All Profiles as JSON", data=export_profiles_json(),
-                               file_name="batch_distributions.json", mime="application/json",
-                               use_container_width=True, key="export_json")
-        with imp_col:
-            imp_file = st.file_uploader("Import profiles JSON", type=["json"], key="import_json_file")
-            if imp_file:
-                try:
-                    import_profiles_json(imp_file.read().decode())
-                    st.success("Profiles imported successfully.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Import failed: {e}")
-else:
-    # Toggle OFF — the region's default profile (fixed or percentage), Standard type
-    _default_name = st.session_state.dist_defaults.get(region_code)
-    _dp = get_profile(region_code, _default_name) if _default_name else None
-    ep = normalize_profile(_dp) if _dp else None
-    if ep:
-        ep["_editing_name"] = _default_name
-    batch_type = "standard"
-    if ep and ((ep.get("twd") or {}).get("enabled") or (ep.get("vintage") or {}).get("enabled")):
-        st.caption(f"ℹ️ The default profile “{_default_name}” has TWD / Vintage switched on, so they apply to this batch.")
+        batch_type = st.radio(
+            "Batch Type",
+            options=list(BATCH_TYPE_OPTIONS.keys()),
+            format_func=lambda k: BATCH_TYPE_OPTIONS[k],
+            index=0,
+            key="batch_type_radio",
+            help=(
+                "**Standard** — Default. Fill by country quota, no machine filtering.\n\n"
+                "**Low** — Only selects cases with < 3 Total Machines.\n\n"
+                "**Traditional** — First fills 50% of the total quota with 3+ machine cases "
+                "(by country), then completes with 1–2 machine cases.\n\n"
+                "**Golden** — Selects only 3+ machine cases. Falls back to any available cases "
+                "only if the quota cannot be met with 3+ cases alone (warning shown)."
+            ),
+        )
 
-# Turn the working profile into final whole-case quotas (percentage profiles are converted here)
-if ep is not None:
-    ep_resolved, dist_problem = resolve_profile(ep)
-else:
-    ep_resolved, dist_problem = None, None
-if dist_problem:
-    st.error(f"🚫 The distribution profile can't be applied yet: {dist_problem} "
-             "Generate Prebatch File stays locked until this is fixed.")
+        with st.expander("✏️ Edit Profile", expanded=False):
+            ep["name"] = st.text_input("Profile Name", value=ep["name"], key=_wk("ep_name"))
+            _pct = ep["mode"] == "percentage"
+            st.markdown("**Groups** — " + ("set the countries and the share (%) of the batch each group receives."
+                                           if _pct else "set countries and quota for each group."))
+            country_list = MCC_COUNTRIES if _rp_for_config == "MCC" else CS_COUNTRIES
 
-
-# ──────────────────────────────────────────────
-# Confirm from Existing Prebatch File
-# ──────────────────────────────────────────────
-st.markdown("---")
-with st.expander("📥 Confirm from Existing Prebatch File", expanded=False):
-    st.markdown(
-        "Use this if the app restarted after you already downloaded a Prebatch file. "
-        "Upload the file to confirm it directly without re-generating."
-    )
-    cf_upload = st.file_uploader(
-        "Upload Prebatch file (XLSX or CSV)",
-        type=["xlsx", "xls", "csv"],
-        key="confirm_from_file_upload",
-    )
-    if cf_upload is not None:
-        try:
-            cf_df = clean_df(read_file(cf_upload))
-
-            # Auto-detect region from column structure
-            if "Country" in cf_df.columns and "Countries" not in cf_df.columns:
-                cf_region = "CS"
-            elif "Countries" in cf_df.columns:
-                cf_region = "MCC"
-            else:
-                cf_region = region_code  # fall back to active region
-
-            # Validate required columns
-            if "Case ID" not in cf_df.columns:
-                st.error("File does not contain a 'Case ID' column. Please upload a valid Prebatch file.")
-            else:
-                n_cases = len(cf_df)
-                st.success(
-                    f"**{n_cases} cases** detected · Region auto-detected: **{cf_region}**"
-                )
-                st.dataframe(
-                    cf_df[["Case ID", "Entity Name"]].head(20) if "Entity Name" in cf_df.columns
-                    else cf_df[["Case ID"]].head(20),
-                    use_container_width=True, hide_index=True,
-                    height=min(35 * min(n_cases, 20) + 40, 380),
-                )
-                if n_cases > 20:
-                    st.caption(f"Showing first 20 of {n_cases} cases.")
-
-                st.markdown("**Confirm this delivery:**")
-                cf_col1, cf_col2 = st.columns(2)
-                with cf_col1:
-                    cf_date = st.date_input(
-                        "Delivery Date", value=datetime.today(),
-                        key="cf_delivery_date",
-                    )
-                with cf_col2:
-                    cf_suggested = next_batch_number(cf_region)
-                    cf_batch_num = st.number_input(
-                        "Batch Number", min_value=1,
-                        value=cf_suggested, step=1,
-                        key="cf_batch_number",
-                        help=f"Suggested: {cf_suggested} (last confirmed + 1 for {cf_region})",
-                    )
-
-                cf_existing = [
-                    b.get("batch_number")
-                    for b in st.session_state.delivery_history.get(cf_region, [])
-                ]
-                cf_is_dup = int(cf_batch_num) in cf_existing
-                if cf_is_dup:
-                    st.warning(
-                        f"⚠️ Batch **#{int(cf_batch_num)}** already exists for **{cf_region}**. "
-                        "Tick the checkbox to replace it."
-                    )
-                    cf_overwrite_ok = st.checkbox(
-                        f"Yes, replace Batch #{int(cf_batch_num)} for {cf_region}",
-                        key="cf_overwrite_chk",
-                    )
-                else:
-                    cf_overwrite_ok = True
-
-                st.caption(
-                    f"**{n_cases} cases** will be confirmed · "
-                    f"Profile: **Manual confirmation from file** · Region: **{cf_region}**"
-                )
-
-                _cf_problem = github_config_problem()
-                if _cf_problem:
-                    st.error(
-                        f"🚫 {_cf_problem}\n\n"
-                        "Nothing can be registered until this is fixed. Keep the Prebatch file; after the "
-                        "reboot, upload it here again."
-                    )
-
-                if st.button(
-                    "✅ Confirm Delivery from File", type="primary",
-                    use_container_width=True, key="cf_confirm_btn",
-                    disabled=(cf_is_dup and not cf_overwrite_ok) or bool(_cf_problem),
-                ):
-                    cf_entry = {
-                        "batch_number": int(cf_batch_num),
-                        "delivery_date": cf_date.strftime("%Y-%m-%d"),
-                        "region": cf_region,
-                        "profile": "Manual confirmation from file",
-                        "total_cases": n_cases,
-                        "cases": [
-                            [str(row["Case ID"]), str(row.get("Entity Name", ""))]
-                            for _, row in cf_df.iterrows()
-                        ],
-                    }
-                    _prev_history = copy.deepcopy(st.session_state.delivery_history)
-                    cf_batches = st.session_state.delivery_history.setdefault(cf_region, [])
-                    replaced = False
-                    for i, b in enumerate(cf_batches):
-                        if b.get("batch_number") == int(cf_batch_num):
-                            cf_batches[i] = cf_entry
-                            replaced = True
-                            break
-                    if not replaced:
-                        cf_batches.append(cf_entry)
-                    st.session_state.delivery_history[cf_region] = sorted(
-                        cf_batches, key=lambda b: b.get("batch_number", 0)
-                    )
-                    with st.spinner("Saving to GitHub..."):
-                        ok, err, new_sha = save_history_to_github(
-                            _full_payload(), st.session_state.history_sha
+            groups_to_delete = []
+            for gi, grp in enumerate(ep["groups"]):
+                other_used = {c for gj, grp_j in enumerate(ep["groups"])
+                              if gj != gi for c in grp_j.get("countries", [])}
+                available_options = [c for c in country_list if c not in other_used]
+                current_selection = [c for c in grp.get("countries", []) if c in available_options]
+                with st.container():
+                    gc1, gc2, gc3, gc4 = st.columns([2.5, 3, 1.2, 0.5])
+                    with gc1:
+                        grp["name"] = st.text_input("Group Name", value=grp["name"],
+                                                     key=_wk("gname", gi), label_visibility="collapsed")
+                    with gc2:
+                        grp["countries"] = st.multiselect(
+                            "Countries", options=available_options, default=current_selection,
+                            key=_wk("gcountries", gi), label_visibility="collapsed",
+                            help="Countries already assigned to another group are hidden.",
                         )
-                    if ok:
-                        st.session_state.history_sha = new_sha
-                        _fetch_github_history.clear()
-                        st.success(
-                            f"🎉 Batch **#{int(cf_batch_num)}** for **{cf_region}** confirmed from file! "
-                            f"**{n_cases} cases** registered on **{cf_date.strftime('%Y-%m-%d')}**."
-                        )
-                        st.rerun()
-                    else:
-                        st.session_state.delivery_history = _prev_history   # nothing was saved: keep no phantom batch
-                        st.error(f"❌ Failed to save to GitHub: {err}")
-                        st.info("Nothing was saved, so this batch is NOT in the delivery history yet. "
-                                "Fix the connection and press the button again.")
-                        with st.expander("🔧 GitHub Diagnostics", expanded=True):
-                            for label, ok_c, detail in diagnose_github():
-                                st.markdown(f"{'✅' if ok_c else '❌'} **{label}** — {detail}")
-        except Exception as e:
-            st.error(f"Error reading file: {e}")
+                    with gc3:
+                        if _pct:
+                            grp["percent"] = float(st.number_input(
+                                "Percent", min_value=0.0, max_value=100.0, value=float(grp.get("percent", 0.0)),
+                                step=0.5, format="%.2f", key=_wk("gpct", gi), label_visibility="collapsed",
+                                help="This group's share of the batch total, in %."))
+                        else:
+                            grp["quota"] = st.number_input("Quota", min_value=1, max_value=500,
+                                                            value=int(grp["quota"]), step=1,
+                                                            key=_wk("gquota", gi), label_visibility="collapsed")
+                    with gc4:
+                        if st.button("✕", key=f"gdel_{gi}", help="Remove this group"):
+                            groups_to_delete.append(gi)
 
-# ──────────────────────────────────────────────
-# Delivery ID Search String Generator
-# ──────────────────────────────────────────────
-st.markdown("---")
-with st.expander("🔗 Delivery ID Search String Generator", expanded=False):
-    st.markdown(
-        "Upload a Pleteo export to generate **External Case ID** search strings "
-        "for the QuickSuite Delivery ID search bar. Split at 100 IDs each by default. "
-        "Use the **copy button** (top-right of each code block) to copy directly."
-    )
-    id_file = st.file_uploader("Upload Pleteo export (CSV / XLSX)", type=["csv","xlsx","xls"],
-                                key="id_gen_file")
-    if id_file is not None:
-        try:
-            df_id = clean_df(read_file(id_file))
-            col_options = list(df_id.columns)
-            preferred = ["External Case ID", "external_case_id", "ExternalCaseID", "Case ID"]
-            default_col = next((c for c in preferred if c in col_options), col_options[0])
-            ic1, ic2 = st.columns([2, 1])
-            with ic1:
-                id_col = st.selectbox("ID Column", options=col_options,
-                                      index=col_options.index(default_col), key="id_col_select")
-            with ic2:
-                chunk_size = st.number_input("IDs per string", min_value=10, max_value=500,
-                                              value=100, step=10, key="id_chunk_size")
-            # Extract IDs — split each cell by comma, flatten, deduplicate (order-preserving)
-            seen_ids: dict = {}
-            for cell_val in df_id[id_col]:
-                cell_str = str(cell_val).strip()
-                if not cell_str or cell_str.lower() in ("nan", "none", ""):
-                    continue
-                for sub in cell_str.split(","):
-                    sub = sub.strip()
-                    if sub and sub.lower() not in ("nan", "none", ""):
-                        seen_ids[sub] = None   # dict preserves insertion order
-            ids = list(seen_ids.keys())
+            if groups_to_delete:
+                _sync_ep_from_widgets(ep)
+                for gi in reversed(groups_to_delete):
+                    ep["groups"].pop(gi)
+                st.session_state.editor_rev += 1      # widgets are keyed by position: rebuild them
+                st.rerun()
 
-            if not ids:
-                st.warning("No valid IDs found in the selected column.")
+            if _pct:
+                _pcts = [g.get("percent", 0.0) for g in ep["groups"]]
+                _pmsg = percent_problem(_pcts)
+                if _pmsg:
+                    st.error(f"🚫 {_pmsg}")
+                else:
+                    _qs = quotas_from_percent(ep["total"], _pcts)
+                    st.success("✅ Percentages add up to 100%.")
+                    st.markdown(f"**Resulting cases** (total {sum(_qs)}): "
+                                + " · ".join(f"{g['name']} **{n}**" for g, n in zip(ep["groups"], _qs)))
+                    for g, n in zip(ep["groups"], _qs):
+                        if n == 0:
+                            st.warning(f"Group **{g['name']}** rounds to 0 cases.")
             else:
-                strings = generate_id_strings(ids, int(chunk_size))
-                total_strings = len(strings)
-                st.success(f"**{len(ids)}** IDs → **{total_strings}** string{'s' if total_strings > 1 else ''} "
-                           f"(≤ {int(chunk_size)} IDs each)")
-                for si, s in enumerate(strings, 1):
-                    n_ids = len(s.split(","))
-                    st.markdown(
-                        f"**String {si} of {total_strings}** &nbsp;·&nbsp; "
-                        f"<span style='color:#F47920;font-weight:600;'>{n_ids} IDs</span>",
-                        unsafe_allow_html=True,
-                    )
-                    st.code(s, language=None)
-        except Exception as e:
-            st.error(f"Error reading file: {e}")
+                total_quota = sum(g["quota"] for g in ep["groups"])
+                st.caption(f"Total quota across all groups: **{total_quota}** cases")
 
+            if st.button("＋ Add Group", key="add_group_btn"):
+                _sync_ep_from_widgets(ep)
+                ep["groups"].append({"name": "New Group", "countries": [], "quota": 10, "percent": 0.0})
+                st.session_state.editor_rev += 1
+                st.rerun()
 
-# ──────────────────────────────────────────────
-# Processing Area
-# ──────────────────────────────────────────────
-st.divider()
-all_uploaded = bool(qs_files and pl_file and pc_file)
-qs_df_v = pl_df_v = cc_df_v = None
-all_valid = False
+            st.markdown("---")
+            _save_err = None
+            save_col, saveas_col = st.columns(2)
 
-if any([qs_files, pl_file, pc_file]):
-    with st.expander("File Validation", expanded=True):
-        vc1, vc2, vc3 = st.columns(3)
-        with vc1:
-            if qs_files:
-                try:
-                    merged_qs = clean_df(merge_qs_files(qs_files))
-                    ok, missing = validate_file(merged_qs, QS_REQUIRED)
-                    label = f"QS Delivery ID ({len(qs_files)} file{'s' if len(qs_files) > 1 else ''})"
-                    if ok:
-                        st.markdown(f'<span class="val-ok">✔ {label}</span> — {len(merged_qs)} rows, {len(merged_qs.columns)} columns', unsafe_allow_html=True)
-                        qs_df_v, qs_ok = merged_qs, True
+            with save_col:
+                if st.button("💾 Update Profile", type="primary", use_container_width=True, key="save_profile"):
+                    _sync_ep_from_widgets(ep)
+                    _old = ep.get("_editing_name", "")
+                    _new_name = str(ep.get("name", "")).strip()
+                    _problem = _profile_save_problem(ep)
+                    if not _problem and _new_name != _old and _new_name in get_profile_names(_rp_for_config):
+                        _problem = f"A profile named “{_new_name}” already exists. Pick another name."
+                    if _problem:
+                        _save_err = f"🚫 Not saved. {_problem}"
                     else:
-                        st.markdown(f'<span class="val-err">✘ {label}</span> — missing: `{"`, `".join(sorted(missing))}`', unsafe_allow_html=True)
+                        ep["name"] = _new_name
+                        _to_save = _final_profile_for_save(ep)
+                        _snap = _profile_snapshot()
+                        _was_default = st.session_state.dist_defaults.get(_rp_for_config) == _old
+                        replace_profile(_rp_for_config, _old, _to_save)
+                        if _was_default and _old != _new_name:
+                            set_default(_rp_for_config, _new_name)
+                        _ok, _err = _push_profiles()
+                        if _ok:
+                            ep["_editing_name"] = _new_name
+                            st.session_state["_pending_dist_select"] = _new_name
+                            st.session_state.dist_nav += 1
+                            st.session_state.editor_rev += 1
+                            st.toast(f"✅ Profile **{_new_name}** updated.", icon="✅")
+                            st.rerun()
+                        _profile_restore(_snap)
+                        _save_err = f"❌ Not saved: GitHub could not be updated, so nothing was changed. {_err}"
+
+            with saveas_col:
+                st.text_input("Save as new profile name", key=_wk("saveas_name"),
+                              placeholder="New profile name…")
+                if st.button("💾 Save as New", use_container_width=True, key="saveas_btn"):
+                    _clean = st.session_state.get(_wk("saveas_name"), "").strip()
+                    _sync_ep_from_widgets(ep)
+                    if not _clean:
+                        _problem = "Enter a name for the new profile."
+                    elif _clean in get_profile_names(_rp_for_config):
+                        _problem = f"A profile named “{_clean}” already exists. Choose a different name."
+                    else:
+                        _tmp = copy.deepcopy(ep)
+                        _tmp["name"] = _clean
+                        _problem = _profile_save_problem(_tmp)
+                    if _problem:
+                        _save_err = f"🚫 Not saved. {_problem}"
+                    else:
+                        _new_p = _final_profile_for_save({**ep, "name": _clean})
+                        _snap = _profile_snapshot()
+                        st.session_state.dist_profiles.setdefault(_rp_for_config, []).append(copy.deepcopy(_new_p))
+                        _ok, _err = _push_profiles()
+                        if _ok:
+                            _new_ep = normalize_profile(_new_p)
+                            _new_ep["_editing_name"] = _clean
+                            _new_ep["_editing_region"] = _rp_for_config
+                            st.session_state.editor_profile = _new_ep
+                            st.session_state["_pending_dist_select"] = _clean
+                            st.session_state.dist_nav += 1
+                            st.session_state.editor_rev += 1
+                            st.toast(f"✅ New profile **{_clean}** created.", icon="✅")
+                            st.rerun()
+                        _profile_restore(_snap)
+                        _save_err = f"❌ Not saved: GitHub could not be updated, so nothing was changed. {_err}"
+            if _save_err:
+                st.error(_save_err)
+
+        with st.expander("⬆ Import / Export Profiles (JSON)", expanded=False):
+            exp_col, imp_col = st.columns(2)
+            with exp_col:
+                st.download_button("⬇ Export All Profiles as JSON", data=export_profiles_json(),
+                                   file_name="batch_distributions.json", mime="application/json",
+                                   use_container_width=True, key="export_json")
+            with imp_col:
+                imp_file = st.file_uploader("Import profiles JSON", type=["json"], key="import_json_file")
+                if imp_file:
+                    try:
+                        import_profiles_json(imp_file.read().decode())
+                        st.success("Profiles imported successfully.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Import failed: {e}")
+    else:
+        # Toggle OFF — the region's default profile (fixed or percentage), Standard type
+        _default_name = st.session_state.dist_defaults.get(region_code)
+        _dp = get_profile(region_code, _default_name) if _default_name else None
+        ep = normalize_profile(_dp) if _dp else None
+        if ep:
+            ep["_editing_name"] = _default_name
+        batch_type = "standard"
+        if ep and ((ep.get("twd") or {}).get("enabled") or (ep.get("vintage") or {}).get("enabled")):
+            st.caption(f"ℹ️ The default profile “{_default_name}” has TWD / Vintage switched on, so they apply to this batch.")
+
+    # Turn the working profile into final whole-case quotas (percentage profiles are converted here)
+    if ep is not None:
+        ep_resolved, dist_problem = resolve_profile(ep)
+    else:
+        ep_resolved, dist_problem = None, None
+    if dist_problem:
+        st.error(f"🚫 The distribution profile can't be applied yet: {dist_problem} "
+                 "Generate Prebatch File stays locked until this is fixed.")
+
+
+# ──────────────────────────────────────────────
+# Step 3 — Validate & generate (card)
+# ──────────────────────────────────────────────
+with _card("card_run"):
+    _step(3, "Validate & generate", "Check the files against the delivery history, then build the Prebatch.")
+    all_uploaded = bool(qs_files and pl_file and pc_file)
+    qs_df_v = pl_df_v = cc_df_v = None
+    all_valid = False
+
+    if any([qs_files, pl_file, pc_file]):
+        with _files_val:
+            vc1, vc2, vc3 = st.columns(3)
+            with vc1:
+                if qs_files:
+                    try:
+                        merged_qs = clean_df(merge_qs_files(qs_files))
+                        ok, missing = validate_file(merged_qs, QS_REQUIRED)
+                        label = f"QS Delivery ID ({len(qs_files)} file{'s' if len(qs_files) > 1 else ''})"
+                        if ok:
+                            st.markdown(f'<div class="rx-val"><span class="val-ok">✔ {label}</span><span class="rx-val-meta">{len(merged_qs):,} rows · {len(merged_qs.columns)} columns</span></div>', unsafe_allow_html=True)
+                            qs_df_v, qs_ok = merged_qs, True
+                        else:
+                            st.markdown(f'<div class="rx-val"><span class="val-err">✘ {label}</span><span class="rx-val-meta">missing: {", ".join(sorted(missing))}</span></div>', unsafe_allow_html=True)
+                            qs_df_v, qs_ok = None, False
+                    except Exception as e:
+                        st.markdown(f'<div class="rx-val"><span class="val-err">✘ QS Delivery ID</span><span class="rx-val-meta">could not read file(s): {e}</span></div>', unsafe_allow_html=True)
                         qs_df_v, qs_ok = None, False
-                except Exception as e:
-                    st.markdown(f'<span class="val-err">✘ QS Delivery ID</span> — could not read file(s): {e}', unsafe_allow_html=True)
-                    qs_df_v, qs_ok = None, False
-            else:
-                qs_ok = False
-        with vc2: pl_df_v, pl_ok = show_validation(pl_file, PL_REQUIRED, "PL Batch")
-        with vc3: cc_df_v, cc_ok = show_validation(pc_file, CC_REQUIRED, "Conflict Check")
-    all_valid = all_uploaded and qs_ok and pl_ok and cc_ok
+                else:
+                    qs_ok = False
+            with vc2: pl_df_v, pl_ok = show_validation(pl_file, PL_REQUIRED, "PL Batch")
+            with vc3: cc_df_v, cc_ok = show_validation(pc_file, CC_REQUIRED, "Conflict Check")
+        all_valid = all_uploaded and qs_ok and pl_ok and cc_ok
 
-# ── Action Buttons Row ──
-if all_uploaded:
-    if not all_valid:
-        st.warning("One or more files failed validation. Resolve the column errors before continuing.")
+    # ── Action Buttons Row ──
+    if all_uploaded:
+        if not all_valid:
+            st.warning("One or more files failed validation. Resolve the column errors before continuing.")
 
-    if not st.session_state.history_load_ok:
-        st.error(
-            "🚫 Validate Batch is locked because the delivery history could not be loaded from "
-            "GitHub. Without it the 6-month rule and the repeated-case checks cannot run, and an "
-            "empty result would look like an all-clear. See the warning at the top of the page, "
-            "fix the GitHub connection, then press 🔄."
-        )
-
-    _tags_missing = bool(ep_resolved and (ep_resolved.get("twd") or {}).get("enabled")
-                         and pl_df_v is not None and "Tags" not in pl_df_v.columns)
-    if _tags_missing:
-        st.error("🚫 TWD needs the **Tags** column from the Pleteo export, and the uploaded Pleteo file "
-                 "doesn't have it. Re-export it with tags, or switch TWD off in the profile. "
-                 "Generate Prebatch File stays locked.")
-
-    btn_col1, btn_col2 = st.columns(2)
-
-    # ── Validate Batch ──
-    with btn_col1:
-        if st.button("🔍 Validate Batch", use_container_width=True,
-                     disabled=(not all_valid) or (not st.session_state.history_load_ok),
-                     help="Check Case IDs against previously confirmed deliveries."):
-            try:
-                qs_temp = clean_df(merge_qs_files(qs_files))
-                case_ids_to_validate = [
-                    str(v).strip() for v in qs_temp.get("Case ID", qs_temp.iloc[:, 0])
-                    if str(v).strip() and str(v).strip().lower() != "nan"
-                ]
-                excl_ids, excl_msgs, warn_msgs, is_clean = validate_against_history(
-                    case_ids_to_validate, region_code
-                )
-                st.session_state.validation_excluded = excl_ids
-                st.session_state.validation_warnings = warn_msgs
-                st.session_state.validation_clean    = is_clean
-                st.session_state.batch_validated     = True
-                st.session_state.prebatch_ready_to_confirm = False
-                st.session_state.result_df = None
-                # Store excluded messages separately for display
-                st.session_state.validation_excl_msgs = excl_msgs
-            except Exception as e:
-                st.error(f"Validation error: {e}")
-
-    # ── Generate Prebatch (only after validation) ──
-    with btn_col2:
-        generate_disabled = (not all_valid or not st.session_state.batch_validated
-                             or bool(dist_problem) or _tags_missing)
-        generate_help = (
-            "Run Validate Batch first." if not st.session_state.batch_validated else
-            "Resolve file validation errors first." if not all_valid else
-            "Fix the distribution profile first (see the message in the Batch Distribution section)." if dist_problem else
-            "TWD needs the Tags column in the Pleteo export." if _tags_missing else
-            "Generate the Prebatch output file."
-        )
-        if st.button("▶ Generate Prebatch File", type="primary", use_container_width=True,
-                     disabled=generate_disabled, help=generate_help):
-            with st.spinner("Processing files..."):
-                try:
-                    raw_df, unmatched, grouped, duplicates, excluded_ct, deduped = process_data(
-                        qs_df_v, pl_df_v, cc_df_v, region_code
-                    )
-                    st.session_state.raw_df          = raw_df
-                    st.session_state.unmatched       = unmatched
-                    st.session_state.grouped         = grouped
-                    st.session_state.duplicates      = duplicates
-                    st.session_state.excluded_count  = excluded_ct
-                    st.session_state.sub_id_deduped  = deduped
-                    st.session_state.region_processed = region_code
-                    st.session_state.dist_report   = None
-                    st.session_state.dist_warnings = []
-                    st.session_state.dist_applied  = False
-                    st.session_state.manual_added_ids = []      # a fresh Generate starts without manual additions
-                    st.session_state.dist_inputs   = None
-                    st.session_state.prebatch_ready_to_confirm = True
-
-                    _tags_ok = bool(pl_df_v is not None and "Tags" in pl_df_v.columns)
-                    _twd_all = compute_twd_ids(pl_df_v, raw_df["Case ID"]) if _tags_ok else set()
-                    st.session_state.comp_inputs = {"twd_ids": _twd_all, "tags_ok": _tags_ok}
-
-                    # Always apply distribution — toggle controls type/profile choice only
-                    # Toggle OFF = Standard type with default profile
-                    if ep_resolved is not None:
-                        profile_clean = {k: v for k, v in ep_resolved.items() if not k.startswith("_")}
-                        try:
-                            _twd_ids = _twd_all      # only enforced when the profile's TWD toggle is on
-                            final_df, report, dw = apply_batch_distribution(
-                                raw_df, profile_clean, region_code, batch_type=batch_type, twd_ids=_twd_ids
-                            )
-                            st.session_state.result_df     = final_df
-                            st.session_state.dist_report   = report
-                            st.session_state.dist_warnings = dw
-                            st.session_state.dist_applied  = True
-                            st.session_state.dist_inputs   = {"profile": profile_clean, "batch_type": batch_type,
-                                                              "region": region_code, "twd_ids": _twd_ids}
-                        except Exception as dist_err:
-                            st.warning(f"Distribution could not be applied: {dist_err}. Using full merge.")
-                            st.session_state.result_df = raw_df
-                    else:
-                        st.session_state.result_df = raw_df
-
-                    # Log entry — always records the final output cases
-                    final = st.session_state.result_df
-                    st.session_state.generation_log.append({
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "region": region_code, "total": len(final),
-                        "grouped": len(grouped), "unmatched": len(unmatched),
-                        "duplicates": len(duplicates), "confirmed": False,
-                        "batch_number": None, "delivery_date": None,
-                        "cases": [(r["Case ID"], r.get("Entity Name","")) for _, r in final.iterrows()],
-                    })
-                except Exception as e:
-                    st.error(f"Error processing files: {str(e)}")
-                    st.exception(e)
-
-    # ── Validation Result Display ──
-    if st.session_state.batch_validated:
-        excl_ids  = st.session_state.get("validation_excluded", set())
-        excl_msgs = st.session_state.get("validation_excl_msgs", [])
-        warn_msgs = st.session_state.get("validation_warnings", [])
-
-        if st.session_state.validation_clean:
-            st.success(
-                "✅ **Batch validated — No repeated Case IDs found.** "
-                "All cases are new to the delivery history. You may now generate the Prebatch file."
+        if not st.session_state.history_load_ok:
+            st.error(
+                "🚫 Validate Batch is locked because the delivery history could not be loaded from "
+                "GitHub. Without it the 6-month rule and the repeated-case checks cannot run, and an "
+                "empty result would look like an all-clear. See the warning at the top of the page, "
+                "fix the GitHub connection, then press 🔄."
             )
-        else:
-            if excl_ids:
-                st.error(
-                    f"🚫 **{len(excl_ids)} case(s) automatically excluded** — "
-                    f"delivered within the last 6 months. They will be removed from the output."
+
+        _tags_missing = bool(ep_resolved and (ep_resolved.get("twd") or {}).get("enabled")
+                             and pl_df_v is not None and "Tags" not in pl_df_v.columns)
+        if _tags_missing:
+            st.error("🚫 TWD needs the **Tags** column from the Pleteo export, and the uploaded Pleteo file "
+                     "doesn't have it. Re-export it with tags, or switch TWD off in the profile. "
+                     "Generate Prebatch File stays locked.")
+
+        btn_col1, btn_col2 = st.columns(2)
+
+        # ── Validate Batch ──
+        with btn_col1:
+            if st.button("🔍 Validate Batch", use_container_width=True,
+                         disabled=(not all_valid) or (not st.session_state.history_load_ok),
+                         help="Check Case IDs against previously confirmed deliveries."):
+                try:
+                    qs_temp = clean_df(merge_qs_files(qs_files))
+                    case_ids_to_validate = [
+                        str(v).strip() for v in qs_temp.get("Case ID", qs_temp.iloc[:, 0])
+                        if str(v).strip() and str(v).strip().lower() != "nan"
+                    ]
+                    excl_ids, excl_msgs, warn_msgs, is_clean = validate_against_history(
+                        case_ids_to_validate, region_code
+                    )
+                    st.session_state.validation_excluded = excl_ids
+                    st.session_state.validation_warnings = warn_msgs
+                    st.session_state.validation_clean    = is_clean
+                    st.session_state.batch_validated     = True
+                    st.session_state.prebatch_ready_to_confirm = False
+                    st.session_state.result_df = None
+                    # Store excluded messages separately for display
+                    st.session_state.validation_excl_msgs = excl_msgs
+                except Exception as e:
+                    st.error(f"Validation error: {e}")
+
+        # ── Generate Prebatch (only after validation) ──
+        with btn_col2:
+            generate_disabled = (not all_valid or not st.session_state.batch_validated
+                                 or bool(dist_problem) or _tags_missing)
+            generate_help = (
+                "Run Validate Batch first." if not st.session_state.batch_validated else
+                "Resolve file validation errors first." if not all_valid else
+                "Fix the distribution profile first (see the message in the Batch Distribution section)." if dist_problem else
+                "TWD needs the Tags column in the Pleteo export." if _tags_missing else
+                "Generate the Prebatch output file."
+            )
+            if st.button("▶ Generate Prebatch File", type="primary", use_container_width=True,
+                         disabled=generate_disabled, help=generate_help):
+                with st.spinner("Processing files..."):
+                    try:
+                        raw_df, unmatched, grouped, duplicates, excluded_ct, deduped = process_data(
+                            qs_df_v, pl_df_v, cc_df_v, region_code
+                        )
+                        st.session_state.raw_df          = raw_df
+                        st.session_state.unmatched       = unmatched
+                        st.session_state.grouped         = grouped
+                        st.session_state.duplicates      = duplicates
+                        st.session_state.excluded_count  = excluded_ct
+                        st.session_state.sub_id_deduped  = deduped
+                        st.session_state.region_processed = region_code
+                        st.session_state.dist_report   = None
+                        st.session_state.dist_warnings = []
+                        st.session_state.dist_applied  = False
+                        st.session_state.manual_added_ids = []      # a fresh Generate starts without manual additions
+                        st.session_state.dist_inputs   = None
+                        st.session_state.prebatch_ready_to_confirm = True
+
+                        _tags_ok = bool(pl_df_v is not None and "Tags" in pl_df_v.columns)
+                        _twd_all = compute_twd_ids(pl_df_v, raw_df["Case ID"]) if _tags_ok else set()
+                        st.session_state.comp_inputs = {"twd_ids": _twd_all, "tags_ok": _tags_ok}
+
+                        # Always apply distribution — toggle controls type/profile choice only
+                        # Toggle OFF = Standard type with default profile
+                        if ep_resolved is not None:
+                            profile_clean = {k: v for k, v in ep_resolved.items() if not k.startswith("_")}
+                            try:
+                                _twd_ids = _twd_all      # only enforced when the profile's TWD toggle is on
+                                final_df, report, dw = apply_batch_distribution(
+                                    raw_df, profile_clean, region_code, batch_type=batch_type, twd_ids=_twd_ids
+                                )
+                                st.session_state.result_df     = final_df
+                                st.session_state.dist_report   = report
+                                st.session_state.dist_warnings = dw
+                                st.session_state.dist_applied  = True
+                                st.session_state.dist_inputs   = {"profile": profile_clean, "batch_type": batch_type,
+                                                                  "region": region_code, "twd_ids": _twd_ids}
+                            except Exception as dist_err:
+                                st.warning(f"Distribution could not be applied: {dist_err}. Using full merge.")
+                                st.session_state.result_df = raw_df
+                        else:
+                            st.session_state.result_df = raw_df
+
+                        # Log entry — always records the final output cases
+                        final = st.session_state.result_df
+                        st.session_state.generation_log.append({
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "region": region_code, "total": len(final),
+                            "grouped": len(grouped), "unmatched": len(unmatched),
+                            "duplicates": len(duplicates), "confirmed": False,
+                            "batch_number": None, "delivery_date": None,
+                            "cases": [(r["Case ID"], r.get("Entity Name","")) for _, r in final.iterrows()],
+                        })
+                    except Exception as e:
+                        st.error(f"Error processing files: {str(e)}")
+                        st.exception(e)
+
+        # ── Validation Result Display ──
+        if st.session_state.batch_validated:
+            excl_ids  = st.session_state.get("validation_excluded", set())
+            excl_msgs = st.session_state.get("validation_excl_msgs", [])
+            warn_msgs = st.session_state.get("validation_warnings", [])
+
+            if st.session_state.validation_clean:
+                st.success(
+                    "✅ **Batch validated — No repeated Case IDs found.** "
+                    "All cases are new to the delivery history. You may now generate the Prebatch file."
                 )
-                with st.expander(f"View {len(excl_msgs)} excluded case(s)", expanded=True):
-                    for m in excl_msgs:
-                        st.markdown(f"- {m}")
+            else:
+                if excl_ids:
+                    st.error(
+                        f"🚫 **{len(excl_ids)} case(s) automatically excluded** — "
+                        f"delivered within the last 6 months. They will be removed from the output."
+                    )
+                    with st.expander(f"View {len(excl_msgs)} excluded case(s)", expanded=True):
+                        for m in excl_msgs:
+                            st.markdown(f"- {m}")
 
-            if warn_msgs:
-                st.warning(
-                    f"⚠️ **{len(warn_msgs)} case(s) previously delivered but eligible** — "
-                    f"delivered more than 6 months ago. Included as relaunch/recontact."
-                )
-                with st.expander(f"View {len(warn_msgs)} eligible relaunch case(s)", expanded=False):
-                    for w in warn_msgs:
-                        st.markdown(f"- {w}")
+                if warn_msgs:
+                    st.warning(
+                        f"⚠️ **{len(warn_msgs)} case(s) previously delivered but eligible** — "
+                        f"delivered more than 6 months ago. Included as relaunch/recontact."
+                    )
+                    with st.expander(f"View {len(warn_msgs)} eligible relaunch case(s)", expanded=False):
+                        for w in warn_msgs:
+                            st.markdown(f"- {w}")
 
-            if excl_ids:
-                st.info("Generate is available — excluded cases will be automatically removed from the output.")
+                if excl_ids:
+                    st.info("Generate is available — excluded cases will be automatically removed from the output.")
 
-else:
-    missing = [n for f, n in [(qs_files,"QS Delivery ID"),(pl_file,"PL Batch"),(pc_file,"Conflict Check")] if not f]
-    st.info(f"Upload the remaining file(s) to proceed: **{', '.join(missing)}**")
+    else:
+        missing = [n for f, n in [(qs_files,"QS Delivery ID"),(pl_file,"PL Batch"),(pc_file,"Conflict Check")] if not f]
+        st.info(f"Upload the remaining file(s) to proceed: **{', '.join(missing)}**")
+
 
 
 def _render_batch_panel(result_df, rp, dist_applied, dist_report):
@@ -2730,297 +2542,482 @@ if st.session_state.result_df is not None:
     dist_report   = st.session_state.dist_report
     dist_warnings = st.session_state.dist_warnings
 
-    st.divider()
+    with _card("card_review"):
+        _step(4, "Review", "Check the batch composition and the country balance, then confirm the delivery.")
 
-    # ── Top metrics ──
-    if dist_applied and dist_report:
-        batch_label = BATCH_LABELS.get(dist_report.get("batch_type", "standard"), "Batch")
-        is_custom = enable_batch
-        st.markdown(
-            f"**Prebatch — {dist_report['profile_name']} · {batch_label}"
-            f"{(' · % of ' + str(dist_report.get('total'))) if dist_report.get('mode') == 'percentage' else ''}** "
-            f"&nbsp;·&nbsp; {len(result_df)} of {len(raw_df)} cases selected"
-        )
-        for w in dist_warnings:
-            st.warning(w)
-
-        if is_custom:
-            gr_cols = st.columns(len(dist_report["groups"]))
-            for col, grp in zip(gr_cols, dist_report["groups"]):
-                overflow_note = " (+overflow)" if grp.get("overflow_note") else ""
-                if grp.get("added"):
-                    overflow_note += f" (+{grp['added']} added)"
-                delta_val = "On target" if grp["shortfall"] == 0 else f"-{grp['shortfall']} short"
-                col.metric(
-                    label=grp["group"],
-                    value=f"{grp['filled']} / {grp['quota']}",
-                    delta=f"{delta_val}{overflow_note}",
-                    delta_color="normal" if grp["shortfall"] == 0 else "inverse",
-                )
-
-        _crit = dist_report.get("criteria") or {}
-        _t, _v = _crit.get("twd") or {}, _crit.get("vintage") or {}
-        if _t.get("enabled") or _v.get("enabled"):
-            _cc1, _cc2 = st.columns(2)
-            if _t.get("enabled"):
-                _over_t = _t["selected"] - _t["cap_total"]
-                _cc1.metric("TWD (Relaunch)", f"{_t['selected']} / max {_t['cap_total']}",
-                            delta=(f"+{_over_t} over the cap (added manually)" if _over_t > 0 else "within the cap"),
-                            delta_color=("inverse" if _over_t > 0 else "off"))
-            if _v.get("enabled"):
-                _gap_v = _v["selected"] - _v["target_total"]
-                _cc2.metric(f"Vintage (≤ {_v['year']})", f"{_v['selected']} / target {_v['target_total']}",
-                            delta=("target met" if _gap_v >= 0 else f"{_gap_v} short"),
-                            delta_color=("off" if _gap_v >= 0 else "inverse"))
-            with st.expander("TWD / Vintage detail by group", expanded=False):
-                _rows = []
-                for gi_, g_ in enumerate(dist_report["groups"]):
-                    _rows.append({"Group": g_["group"],
-                                  "TWD (selected / cap)": (f"{_t['by_group'][gi_]} / {_t['caps'][gi_]}" if _t.get("enabled") else "off"),
-                                  "Vintage (selected / target)": (f"{_v['by_group'][gi_]} / {_v['targets'][gi_]}" if _v.get("enabled") else "off")})
-                st.dataframe(pd.DataFrame(_rows), hide_index=True, use_container_width=True)
-
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("Cases in Prebatch",       len(result_df))
-        m2.metric("Total Available",          len(raw_df))
-        m3.metric("Backlog",                  dist_report.get("total_backlog", 0))
-        m4.metric("Duplicates Removed",       len(st.session_state.duplicates))
-        m5.metric("Excluded (6-mo) 🚫",       st.session_state.get("excluded_count", 0))
-    else:
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("Total Cases",              len(result_df))
-        m2.metric("Grouped Entities",         len(st.session_state.grouped))
-        m3.metric("Unmatched",                len(st.session_state.unmatched))
-        m4.metric("Duplicates Removed",       len(st.session_state.duplicates))
-        m5.metric("Excluded (6-mo) 🚫",       st.session_state.get("excluded_count", 0))
-
-    # ── Diagnostics ──
-    dcols = st.columns(4)
-    with dcols[0]:
-        if st.session_state.unmatched:
-            with st.expander(f"⚠ Unmatched ({len(st.session_state.unmatched)})"):
-                st.caption("Included with blank Conflict Check fields.")
-                for c in st.session_state.unmatched: st.code(c)
-    with dcols[1]:
-        if st.session_state.grouped:
-            with st.expander(f"ℹ Grouped ({len(st.session_state.grouped)})"):
-                st.caption("Machine Overview and Notes combined.")
-                for c in st.session_state.grouped: st.code(c)
-    with dcols[2]:
-        if st.session_state.duplicates:
-            with st.expander(f"🚫 Duplicates Removed ({len(st.session_state.duplicates)})"):
-                st.caption("First occurrence kept.")
-                for c in st.session_state.duplicates: st.code(c)
-    with dcols[3]:
-        deduped_list = st.session_state.get("sub_id_deduped", [])
-        if deduped_list:
-            with st.expander(f"🔧 Sub-IDs Cleaned ({len(deduped_list)})"):
-                st.caption("Repeated sub-IDs deduplicated automatically.")
-                for c in deduped_list: st.code(c)
-
-    # ── Full merge reference (only shown when distribution was applied) ──
-    if dist_applied and raw_df is not None and len(raw_df) != len(result_df):
-        with st.expander(f"📋 Full merge reference ({len(raw_df)} cases before distribution)", expanded=False):
-            st.caption("All cases from the file merge, before distribution filtering was applied.")
-            st.dataframe(raw_df, use_container_width=True, height=300)
-
-    # ── Backlog report (only when distribution applied) ──
-    if dist_applied and dist_report and not dist_report["backlog_table"].empty:
-        with st.expander("📋 Backlog Report — cases not included in this Prebatch", expanded=False):
-            st.caption("Available for the next batch delivery, broken down by country.")
-            st.dataframe(dist_report["backlog_table"], use_container_width=True,
-                         hide_index=True,
-                         height=min(35 * len(dist_report["backlog_table"]) + 40, 380))
-            st.download_button(
-                "⬇ Download Backlog Report",
-                data=to_excel(dist_report["backlog_table"], sheet_name="Backlog"),
-                file_name=f"Backlog_{rp}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_backlog",
-            )
-
-    # ── Prebatch preview + download ──
-    st.subheader("Prebatch Preview")
-
-    try:
-        _render_batch_panel(result_df, rp, dist_applied, dist_report)
-    except Exception as _panel_err:          # informational panel: never let it block the results or Confirm
-        st.warning(f"The batch composition panel could not be built: {_panel_err}")
-
-    _added_ids = list(dist_report.get("manual_added", [])) if (dist_applied and dist_report) else []
-    if _added_ids:
-        _aset = set(_added_ids)
-        def _mark_added(row):
-            return ["background-color: #FFF3CD; color: #1A1A1A;" if str(row["Case ID"]) in _aset else "" for _ in row]
-        st.dataframe(result_df.style.apply(_mark_added, axis=1), use_container_width=True, height=380)
-    else:
-        st.dataframe(result_df, use_container_width=True, height=380)
-
-    # ── Add TWD / Vintage cases from the backlog (only while the batch is short) ──
-    if dist_applied and dist_report and st.session_state.prebatch_ready_to_confirm and st.session_state.dist_inputs:
-        if _added_ids:
-            st.info(f"✋ {len(_added_ids)} case(s) were added manually from the backlog (highlighted in the preview).")
-            if st.button("↩ Remove the manually added cases", key="manual_undo_btn"):
-                _apply_manual([])
-                st.rerun()
-        _cands = dist_report.get("manual_candidates")
-        _short = int(dist_report.get("shortfall", 0))
-        if _short > 0 and _cands is not None and len(_cands) > 0:
-            with st.expander(f"➕ Add TWD / Vintage cases from the backlog — the batch is short by {_short}", expanded=True):
-                st.caption(f"These cases were not selected (for example, held back by the TWD cap). You can add up to "
-                           f"{_short} of them. Each one counts toward its own country group.")
-                st.dataframe(_cands, hide_index=True, use_container_width=True,
-                             height=min(35 * len(_cands) + 40, 320))
-                _labels = {r["Case ID"]: (f"{r['Case ID']} — {r['Entity Name']} · {r['Country']} · "
-                                          f"{r['# All Time Machines']} machines"
-                                          f"{' · TWD' if r['TWD'] else ''}{' · Vintage' if r['Vintage'] else ''}")
-                           for _, r in _cands.iterrows()}
-                _pick = st.multiselect("Cases to add", options=list(_labels), format_func=lambda c: _labels[c],
-                                       key=f"manual_pick_{st.session_state.manual_rev}")
-                _over = len(_pick) > _short
-                if _over:
-                    st.warning(f"Pick at most {_short} case(s): the batch is short by {_short}.")
-                if st.button("➕ Add to Prebatch", type="primary", key="manual_add_btn",
-                             disabled=(not _pick) or _over):
-                    _apply_manual(list(_added_ids) + list(_pick))
-                    st.rerun()
-    st.download_button(
-        label=f"⬇ Download Prebatch_{rp}.xlsx",
-        data=to_excel(result_df),
-        file_name=f"Prebatch_{rp}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary", use_container_width=True,
-    )
-
-    # ════════════════════════════════════════
-    # CONFIRM BATCH DELIVERY
-    # ════════════════════════════════════════
-    if st.session_state.prebatch_ready_to_confirm:
-        st.markdown("")
-        st.markdown("""
-        <div class="confirm-section">
-            <h3>✅ Confirm Batch Delivery</h3>
-            <p>Complete the delivery details below and confirm to register this Prebatch permanently in the delivery history.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("")
-
-        suggested_batch = next_batch_number(rp)
-        cf1, cf2 = st.columns(2)
-        with cf1:
-            delivery_date = st.date_input(
-                "Delivery Date", value=datetime.today(), key="confirm_date",
-            )
-        with cf2:
-            batch_number = st.number_input(
-                "Batch Number", min_value=1, value=suggested_batch, step=1,
-                key="confirm_batch_num",
-                help=f"Suggested: {suggested_batch} (last confirmed + 1 for {rp})",
-            )
-
-        existing_nums = [b.get("batch_number") for b in
-                         st.session_state.delivery_history.get(rp, [])]
-        is_duplicate = int(batch_number) in existing_nums
-
-        if is_duplicate:
-            st.warning(
-                f"⚠️ Batch **#{int(batch_number)}** already exists for **{rp}**. "
-                "Confirming will **replace** the existing entry. "
-                "Tick the checkbox below to proceed."
-            )
-            overwrite_confirmed = st.checkbox(
-                f"Yes, I want to replace Batch #{int(batch_number)} for {rp}",
-                value=False,
-                key="overwrite_confirm_checkbox",
-            )
-        else:
-            overwrite_confirmed = True
-
+        # ── Top metrics ──
         if dist_applied and dist_report:
-            profile_name = dist_report.get("profile_name", "—")
-            batch_label  = BATCH_LABELS.get(dist_report.get("batch_type","standard"), "Batch")
-            _pct_txt = f" (% of {dist_report.get('total')})" if dist_report.get("mode") == "percentage" else ""
-            confirm_label = f"{profile_name}{_pct_txt} · {batch_label}"
-            if dist_report.get("manual_added"):
-                confirm_label += f" · +{len(dist_report['manual_added'])} added manually"
-        else:
-            confirm_label = "Full Prebatch (no distribution applied)"
-
-        st.caption(
-            f"**{len(result_df)} cases** will be confirmed · "
-            f"Profile: **{confirm_label}** · Region: **{rp}**"
-        )
-
-        _gh_problem = github_config_problem()
-        if _gh_problem:
-            st.error(
-                f"🚫 {_gh_problem}\n\n"
-                "Your Prebatch file is not affected: download it above. Once the secrets are fixed "
-                "and the app is rebooted, register it with **Confirm from Existing Prebatch File**."
+            batch_label = BATCH_LABELS.get(dist_report.get("batch_type", "standard"), "Batch")
+            is_custom = enable_batch
+            st.markdown(
+                f"**Prebatch — {dist_report['profile_name']} · {batch_label}"
+                f"{(' · % of ' + str(dist_report.get('total'))) if dist_report.get('mode') == 'percentage' else ''}** "
+                f"&nbsp;·&nbsp; {len(result_df)} of {len(raw_df)} cases selected"
             )
+            for w in dist_warnings:
+                st.warning(w)
 
-        if st.button("✅ Confirm Batch Delivery", type="primary",
-                     use_container_width=True, key="confirm_delivery_btn",
-                     disabled=(is_duplicate and not overwrite_confirmed) or bool(_gh_problem)):
-            batch_entry = {
-                "batch_number": int(batch_number),
-                "delivery_date": delivery_date.strftime("%Y-%m-%d"),
-                "region": rp, "profile": confirm_label,
-                "total_cases": len(result_df),
-                "cases": [[row["Case ID"], row.get("Entity Name", "")]
-                           for _, row in result_df.iterrows()],
-            }
-            _prev_history = copy.deepcopy(st.session_state.delivery_history)
-            region_batches = st.session_state.delivery_history.setdefault(rp, [])
-            replaced = False
-            for i, b in enumerate(region_batches):
-                if b.get("batch_number") == int(batch_number):
-                    region_batches[i] = batch_entry; replaced = True; break
-            if not replaced:
-                region_batches.append(batch_entry)
-            st.session_state.delivery_history[rp] = sorted(
-                region_batches, key=lambda b: b.get("batch_number", 0)
-            )
-            with st.spinner("Saving batch history to GitHub..."):
-                ok, err, new_sha = save_history_to_github(
-                    _full_payload(), st.session_state.history_sha
-                )
-            if ok:
-                st.session_state.history_sha = new_sha
-                _fetch_github_history.clear()  # bust cache so next render is fresh
-                st.session_state.prebatch_ready_to_confirm = False
-                if st.session_state.generation_log:
-                    last = st.session_state.generation_log[-1]
-                    last.update({"confirmed": True, "batch_number": int(batch_number),
-                                 "delivery_date": delivery_date.strftime("%Y-%m-%d")})
-                st.success(
-                    f"🎉 Batch **#{int(batch_number)}** for **{rp}** confirmed and saved! "
-                    f"**{len(result_df)}** cases registered on **{delivery_date.strftime('%Y-%m-%d')}**."
-                )
-                st.rerun()
-            else:
-                st.session_state.delivery_history = _prev_history   # nothing was saved: keep no phantom batch
-                st.error(f"❌ Failed to save to GitHub: {err}")
-                st.info("Nothing was saved, so this batch is NOT in the delivery history yet. "
-                        "Your Prebatch file is unaffected. Fix the connection and press Confirm again, "
-                        "or use Confirm from Existing Prebatch File.")
-                with st.expander("🔧 Run GitHub Diagnostics", expanded=True):
-                    for label, ok_check, detail in diagnose_github():
-                        st.markdown(f"{'✅' if ok_check else '❌'} **{label}** — {detail}")
-                    st.markdown("---")
-                    st.markdown(
-                        "**Common fixes:**\n"
-                        "- `GITHUB_REPO` must be `owner/repo-name`\n"
-                        "- `GITHUB_BRANCH` must match your default branch\n"
-                        "- `GITHUB_TOKEN` must have `repo` scope\n"
-                        "- Update secrets in Streamlit Cloud → App Settings → Secrets, then reboot"
+            if is_custom:
+                gr_cols = st.columns(len(dist_report["groups"]))
+                for col, grp in zip(gr_cols, dist_report["groups"]):
+                    overflow_note = " (+overflow)" if grp.get("overflow_note") else ""
+                    if grp.get("added"):
+                        overflow_note += f" (+{grp['added']} added)"
+                    delta_val = "On target" if grp["shortfall"] == 0 else f"-{grp['shortfall']} short"
+                    col.metric(
+                        label=grp["group"],
+                        value=f"{grp['filled']} / {grp['quota']}",
+                        delta=f"{delta_val}{overflow_note}",
+                        delta_color="normal" if grp["shortfall"] == 0 else "inverse",
                     )
 
+            _crit = dist_report.get("criteria") or {}
+            _t, _v = _crit.get("twd") or {}, _crit.get("vintage") or {}
+            if _t.get("enabled") or _v.get("enabled"):
+                _cc1, _cc2 = st.columns(2)
+                if _t.get("enabled"):
+                    _over_t = _t["selected"] - _t["cap_total"]
+                    _cc1.metric("TWD (Relaunch)", f"{_t['selected']} / max {_t['cap_total']}",
+                                delta=(f"+{_over_t} over the cap (added manually)" if _over_t > 0 else "within the cap"),
+                                delta_color=("inverse" if _over_t > 0 else "off"))
+                if _v.get("enabled"):
+                    _gap_v = _v["selected"] - _v["target_total"]
+                    _cc2.metric(f"Vintage (≤ {_v['year']})", f"{_v['selected']} / target {_v['target_total']}",
+                                delta=("target met" if _gap_v >= 0 else f"{_gap_v} short"),
+                                delta_color=("off" if _gap_v >= 0 else "inverse"))
+                with st.expander("TWD / Vintage detail by group", expanded=False):
+                    _rows = []
+                    for gi_, g_ in enumerate(dist_report["groups"]):
+                        _rows.append({"Group": g_["group"],
+                                      "TWD (selected / cap)": (f"{_t['by_group'][gi_]} / {_t['caps'][gi_]}" if _t.get("enabled") else "off"),
+                                      "Vintage (selected / target)": (f"{_v['by_group'][gi_]} / {_v['targets'][gi_]}" if _v.get("enabled") else "off")})
+                    st.dataframe(pd.DataFrame(_rows), hide_index=True, use_container_width=True)
+
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("Cases in Prebatch",       len(result_df))
+            m2.metric("Total Available",          len(raw_df))
+            m3.metric("Backlog",                  dist_report.get("total_backlog", 0))
+            m4.metric("Duplicates Removed",       len(st.session_state.duplicates))
+            m5.metric("Excluded (6-mo) 🚫",       st.session_state.get("excluded_count", 0))
+        else:
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("Total Cases",              len(result_df))
+            m2.metric("Grouped Entities",         len(st.session_state.grouped))
+            m3.metric("Unmatched",                len(st.session_state.unmatched))
+            m4.metric("Duplicates Removed",       len(st.session_state.duplicates))
+            m5.metric("Excluded (6-mo) 🚫",       st.session_state.get("excluded_count", 0))
+
+        # ── Diagnostics ──
+        dcols = st.columns(4)
+        with dcols[0]:
+            if st.session_state.unmatched:
+                with st.expander(f"⚠ Unmatched ({len(st.session_state.unmatched)})"):
+                    st.caption("Included with blank Conflict Check fields.")
+                    for c in st.session_state.unmatched: st.code(c)
+        with dcols[1]:
+            if st.session_state.grouped:
+                with st.expander(f"ℹ Grouped ({len(st.session_state.grouped)})"):
+                    st.caption("Machine Overview and Notes combined.")
+                    for c in st.session_state.grouped: st.code(c)
+        with dcols[2]:
+            if st.session_state.duplicates:
+                with st.expander(f"🚫 Duplicates Removed ({len(st.session_state.duplicates)})"):
+                    st.caption("First occurrence kept.")
+                    for c in st.session_state.duplicates: st.code(c)
+        with dcols[3]:
+            deduped_list = st.session_state.get("sub_id_deduped", [])
+            if deduped_list:
+                with st.expander(f"🔧 Sub-IDs Cleaned ({len(deduped_list)})"):
+                    st.caption("Repeated sub-IDs deduplicated automatically.")
+                    for c in deduped_list: st.code(c)
+
+        # ── Full merge reference (only shown when distribution was applied) ──
+        if dist_applied and raw_df is not None and len(raw_df) != len(result_df):
+            with st.expander(f"📋 Full merge reference ({len(raw_df)} cases before distribution)", expanded=False):
+                st.caption("All cases from the file merge, before distribution filtering was applied.")
+                st.dataframe(raw_df, use_container_width=True, height=300)
+
+        # ── Backlog report (only when distribution applied) ──
+        if dist_applied and dist_report and not dist_report["backlog_table"].empty:
+            with st.expander("📋 Backlog Report — cases not included in this Prebatch", expanded=False):
+                st.caption("Available for the next batch delivery, broken down by country.")
+                st.dataframe(dist_report["backlog_table"], use_container_width=True,
+                             hide_index=True,
+                             height=min(35 * len(dist_report["backlog_table"]) + 40, 380))
+                st.download_button(
+                    "⬇ Download Backlog Report",
+                    data=to_excel(dist_report["backlog_table"], sheet_name="Backlog"),
+                    file_name=f"Backlog_{rp}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_backlog",
+                )
+
+        # ── Prebatch preview + download ──
+        st.subheader("Prebatch Preview")
+
+        try:
+            _render_batch_panel(result_df, rp, dist_applied, dist_report)
+        except Exception as _panel_err:          # informational panel: never let it block the results or Confirm
+            st.warning(f"The batch composition panel could not be built: {_panel_err}")
+
+        _added_ids = list(dist_report.get("manual_added", [])) if (dist_applied and dist_report) else []
+        if _added_ids:
+            _aset = set(_added_ids)
+            def _mark_added(row):
+                return ["background-color: #FFF3CD; color: #1A1A1A;" if str(row["Case ID"]) in _aset else "" for _ in row]
+            st.dataframe(result_df.style.apply(_mark_added, axis=1), use_container_width=True, height=380)
+        else:
+            st.dataframe(result_df, use_container_width=True, height=380)
+
+        # ── Add TWD / Vintage cases from the backlog (only while the batch is short) ──
+        if dist_applied and dist_report and st.session_state.prebatch_ready_to_confirm and st.session_state.dist_inputs:
+            if _added_ids:
+                st.info(f"✋ {len(_added_ids)} case(s) were added manually from the backlog (highlighted in the preview).")
+                if st.button("↩ Remove the manually added cases", key="manual_undo_btn"):
+                    _apply_manual([])
+                    st.rerun()
+            _cands = dist_report.get("manual_candidates")
+            _short = int(dist_report.get("shortfall", 0))
+            if _short > 0 and _cands is not None and len(_cands) > 0:
+                with st.expander(f"➕ Add TWD / Vintage cases from the backlog — the batch is short by {_short}", expanded=True):
+                    st.caption(f"These cases were not selected (for example, held back by the TWD cap). You can add up to "
+                               f"{_short} of them. Each one counts toward its own country group.")
+                    st.dataframe(_cands, hide_index=True, use_container_width=True,
+                                 height=min(35 * len(_cands) + 40, 320))
+                    _labels = {r["Case ID"]: (f"{r['Case ID']} — {r['Entity Name']} · {r['Country']} · "
+                                              f"{r['# All Time Machines']} machines"
+                                              f"{' · TWD' if r['TWD'] else ''}{' · Vintage' if r['Vintage'] else ''}")
+                               for _, r in _cands.iterrows()}
+                    _pick = st.multiselect("Cases to add", options=list(_labels), format_func=lambda c: _labels[c],
+                                           key=f"manual_pick_{st.session_state.manual_rev}")
+                    _over = len(_pick) > _short
+                    if _over:
+                        st.warning(f"Pick at most {_short} case(s): the batch is short by {_short}.")
+                    if st.button("➕ Add to Prebatch", type="primary", key="manual_add_btn",
+                                 disabled=(not _pick) or _over):
+                        _apply_manual(list(_added_ids) + list(_pick))
+                        st.rerun()
+        st.download_button(
+            label=f"⬇ Download Prebatch_{rp}.xlsx",
+            data=to_excel(result_df),
+            file_name=f"Prebatch_{rp}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary", use_container_width=True,
+        )
+
+    if st.session_state.prebatch_ready_to_confirm:
+        with _card("card_confirm"):
+            _step(5, "Confirm delivery", "Register this Prebatch permanently in the delivery history.")
+
+            suggested_batch = next_batch_number(rp)
+            cf1, cf2 = st.columns(2)
+            with cf1:
+                delivery_date = st.date_input(
+                    "Delivery Date", value=datetime.today(), key="confirm_date",
+                )
+            with cf2:
+                batch_number = st.number_input(
+                    "Batch Number", min_value=1, value=suggested_batch, step=1,
+                    key="confirm_batch_num",
+                    help=f"Suggested: {suggested_batch} (last confirmed + 1 for {rp})",
+                )
+
+            existing_nums = [b.get("batch_number") for b in
+                             st.session_state.delivery_history.get(rp, [])]
+            is_duplicate = int(batch_number) in existing_nums
+
+            if is_duplicate:
+                st.warning(
+                    f"⚠️ Batch **#{int(batch_number)}** already exists for **{rp}**. "
+                    "Confirming will **replace** the existing entry. "
+                    "Tick the checkbox below to proceed."
+                )
+                overwrite_confirmed = st.checkbox(
+                    f"Yes, I want to replace Batch #{int(batch_number)} for {rp}",
+                    value=False,
+                    key="overwrite_confirm_checkbox",
+                )
+            else:
+                overwrite_confirmed = True
+
+            if dist_applied and dist_report:
+                profile_name = dist_report.get("profile_name", "—")
+                batch_label  = BATCH_LABELS.get(dist_report.get("batch_type","standard"), "Batch")
+                _pct_txt = f" (% of {dist_report.get('total')})" if dist_report.get("mode") == "percentage" else ""
+                confirm_label = f"{profile_name}{_pct_txt} · {batch_label}"
+                if dist_report.get("manual_added"):
+                    confirm_label += f" · +{len(dist_report['manual_added'])} added manually"
+            else:
+                confirm_label = "Full Prebatch (no distribution applied)"
+
+            st.caption(
+                f"**{len(result_df)} cases** will be confirmed · "
+                f"Profile: **{confirm_label}** · Region: **{rp}**"
+            )
+
+            _gh_problem = github_config_problem()
+            if _gh_problem:
+                st.error(
+                    f"🚫 {_gh_problem}\n\n"
+                    "Your Prebatch file is not affected: download it above. Once the secrets are fixed "
+                    "and the app is rebooted, register it with **Confirm from Existing Prebatch File**."
+                )
+
+            if st.button("✅ Confirm Batch Delivery", type="primary",
+                         use_container_width=True, key="confirm_delivery_btn",
+                         disabled=(is_duplicate and not overwrite_confirmed) or bool(_gh_problem)):
+                batch_entry = {
+                    "batch_number": int(batch_number),
+                    "delivery_date": delivery_date.strftime("%Y-%m-%d"),
+                    "region": rp, "profile": confirm_label,
+                    "total_cases": len(result_df),
+                    "cases": [[row["Case ID"], row.get("Entity Name", "")]
+                               for _, row in result_df.iterrows()],
+                }
+                _prev_history = copy.deepcopy(st.session_state.delivery_history)
+                region_batches = st.session_state.delivery_history.setdefault(rp, [])
+                replaced = False
+                for i, b in enumerate(region_batches):
+                    if b.get("batch_number") == int(batch_number):
+                        region_batches[i] = batch_entry; replaced = True; break
+                if not replaced:
+                    region_batches.append(batch_entry)
+                st.session_state.delivery_history[rp] = sorted(
+                    region_batches, key=lambda b: b.get("batch_number", 0)
+                )
+                with st.spinner("Saving batch history to GitHub..."):
+                    ok, err, new_sha = save_history_to_github(
+                        _full_payload(), st.session_state.history_sha
+                    )
+                if ok:
+                    st.session_state.history_sha = new_sha
+                    _fetch_github_history.clear()  # bust cache so next render is fresh
+                    st.session_state.prebatch_ready_to_confirm = False
+                    if st.session_state.generation_log:
+                        last = st.session_state.generation_log[-1]
+                        last.update({"confirmed": True, "batch_number": int(batch_number),
+                                     "delivery_date": delivery_date.strftime("%Y-%m-%d")})
+                    st.success(
+                        f"🎉 Batch **#{int(batch_number)}** for **{rp}** confirmed and saved! "
+                        f"**{len(result_df)}** cases registered on **{delivery_date.strftime('%Y-%m-%d')}**."
+                    )
+                    st.rerun()
+                else:
+                    st.session_state.delivery_history = _prev_history   # nothing was saved: keep no phantom batch
+                    st.error(f"❌ Failed to save to GitHub: {err}")
+                    st.info("Nothing was saved, so this batch is NOT in the delivery history yet. "
+                            "Your Prebatch file is unaffected. Fix the connection and press Confirm again, "
+                            "or use Confirm from Existing Prebatch File.")
+                    with st.expander("🔧 Run GitHub Diagnostics", expanded=True):
+                        for label, ok_check, detail in diagnose_github():
+                            st.markdown(f"{'✅' if ok_check else '❌'} **{label}** — {detail}")
+                        st.markdown("---")
+                        st.markdown(
+                            "**Common fixes:**\n"
+                            "- `GITHUB_REPO` must be `owner/repo-name`\n"
+                            "- `GITHUB_BRANCH` must match your default branch\n"
+                            "- `GITHUB_TOKEN` must have `repo` scope\n"
+                            "- Update secrets in Streamlit Cloud → App Settings → Secrets, then reboot"
+                        )
+
+
+    # ──────────────────────────────────────────────
+
 
 # ──────────────────────────────────────────────
-
+# Tools (recovery + helpers), kept out of the main flow
 # ──────────────────────────────────────────────
-# Big Deals Processing & UI
+with _card("card_tools"):
+    _step("+", "Tools", "Recover a delivery from a downloaded Prebatch file, or build search strings from a Pleteo export.")
+    with st.expander("📥 Confirm from Existing Prebatch File", expanded=False):
+        st.markdown(
+            "Use this if the app restarted after you already downloaded a Prebatch file. "
+            "Upload the file to confirm it directly without re-generating."
+        )
+        cf_upload = st.file_uploader(
+            "Upload Prebatch file (XLSX or CSV)",
+            type=["xlsx", "xls", "csv"],
+            key="confirm_from_file_upload",
+        )
+        if cf_upload is not None:
+            try:
+                cf_df = clean_df(read_file(cf_upload))
+
+                # Auto-detect region from column structure
+                if "Country" in cf_df.columns and "Countries" not in cf_df.columns:
+                    cf_region = "CS"
+                elif "Countries" in cf_df.columns:
+                    cf_region = "MCC"
+                else:
+                    cf_region = region_code  # fall back to active region
+
+                # Validate required columns
+                if "Case ID" not in cf_df.columns:
+                    st.error("File does not contain a 'Case ID' column. Please upload a valid Prebatch file.")
+                else:
+                    n_cases = len(cf_df)
+                    st.success(
+                        f"**{n_cases} cases** detected · Region auto-detected: **{cf_region}**"
+                    )
+                    st.dataframe(
+                        cf_df[["Case ID", "Entity Name"]].head(20) if "Entity Name" in cf_df.columns
+                        else cf_df[["Case ID"]].head(20),
+                        use_container_width=True, hide_index=True,
+                        height=min(35 * min(n_cases, 20) + 40, 380),
+                    )
+                    if n_cases > 20:
+                        st.caption(f"Showing first 20 of {n_cases} cases.")
+
+                    st.markdown("**Confirm this delivery:**")
+                    cf_col1, cf_col2 = st.columns(2)
+                    with cf_col1:
+                        cf_date = st.date_input(
+                            "Delivery Date", value=datetime.today(),
+                            key="cf_delivery_date",
+                        )
+                    with cf_col2:
+                        cf_suggested = next_batch_number(cf_region)
+                        cf_batch_num = st.number_input(
+                            "Batch Number", min_value=1,
+                            value=cf_suggested, step=1,
+                            key="cf_batch_number",
+                            help=f"Suggested: {cf_suggested} (last confirmed + 1 for {cf_region})",
+                        )
+
+                    cf_existing = [
+                        b.get("batch_number")
+                        for b in st.session_state.delivery_history.get(cf_region, [])
+                    ]
+                    cf_is_dup = int(cf_batch_num) in cf_existing
+                    if cf_is_dup:
+                        st.warning(
+                            f"⚠️ Batch **#{int(cf_batch_num)}** already exists for **{cf_region}**. "
+                            "Tick the checkbox to replace it."
+                        )
+                        cf_overwrite_ok = st.checkbox(
+                            f"Yes, replace Batch #{int(cf_batch_num)} for {cf_region}",
+                            key="cf_overwrite_chk",
+                        )
+                    else:
+                        cf_overwrite_ok = True
+
+                    st.caption(
+                        f"**{n_cases} cases** will be confirmed · "
+                        f"Profile: **Manual confirmation from file** · Region: **{cf_region}**"
+                    )
+
+                    _cf_problem = github_config_problem()
+                    if _cf_problem:
+                        st.error(
+                            f"🚫 {_cf_problem}\n\n"
+                            "Nothing can be registered until this is fixed. Keep the Prebatch file; after the "
+                            "reboot, upload it here again."
+                        )
+
+                    if st.button(
+                        "✅ Confirm Delivery from File", type="primary",
+                        use_container_width=True, key="cf_confirm_btn",
+                        disabled=(cf_is_dup and not cf_overwrite_ok) or bool(_cf_problem),
+                    ):
+                        cf_entry = {
+                            "batch_number": int(cf_batch_num),
+                            "delivery_date": cf_date.strftime("%Y-%m-%d"),
+                            "region": cf_region,
+                            "profile": "Manual confirmation from file",
+                            "total_cases": n_cases,
+                            "cases": [
+                                [str(row["Case ID"]), str(row.get("Entity Name", ""))]
+                                for _, row in cf_df.iterrows()
+                            ],
+                        }
+                        _prev_history = copy.deepcopy(st.session_state.delivery_history)
+                        cf_batches = st.session_state.delivery_history.setdefault(cf_region, [])
+                        replaced = False
+                        for i, b in enumerate(cf_batches):
+                            if b.get("batch_number") == int(cf_batch_num):
+                                cf_batches[i] = cf_entry
+                                replaced = True
+                                break
+                        if not replaced:
+                            cf_batches.append(cf_entry)
+                        st.session_state.delivery_history[cf_region] = sorted(
+                            cf_batches, key=lambda b: b.get("batch_number", 0)
+                        )
+                        with st.spinner("Saving to GitHub..."):
+                            ok, err, new_sha = save_history_to_github(
+                                _full_payload(), st.session_state.history_sha
+                            )
+                        if ok:
+                            st.session_state.history_sha = new_sha
+                            _fetch_github_history.clear()
+                            st.success(
+                                f"🎉 Batch **#{int(cf_batch_num)}** for **{cf_region}** confirmed from file! "
+                                f"**{n_cases} cases** registered on **{cf_date.strftime('%Y-%m-%d')}**."
+                            )
+                            st.rerun()
+                        else:
+                            st.session_state.delivery_history = _prev_history   # nothing was saved: keep no phantom batch
+                            st.error(f"❌ Failed to save to GitHub: {err}")
+                            st.info("Nothing was saved, so this batch is NOT in the delivery history yet. "
+                                    "Fix the connection and press the button again.")
+                            with st.expander("🔧 GitHub Diagnostics", expanded=True):
+                                for label, ok_c, detail in diagnose_github():
+                                    st.markdown(f"{'✅' if ok_c else '❌'} **{label}** — {detail}")
+            except Exception as e:
+                st.error(f"Error reading file: {e}")
+
+    with st.expander("🔗 Delivery ID Search String Generator", expanded=False):
+        st.markdown(
+            "Upload a Pleteo export to generate **External Case ID** search strings "
+            "for the QuickSuite Delivery ID search bar. Split at 100 IDs each by default. "
+            "Use the **copy button** (top-right of each code block) to copy directly."
+        )
+        id_file = st.file_uploader("Upload Pleteo export (CSV / XLSX)", type=["csv","xlsx","xls"],
+                                    key="id_gen_file")
+        if id_file is not None:
+            try:
+                df_id = clean_df(read_file(id_file))
+                col_options = list(df_id.columns)
+                preferred = ["External Case ID", "external_case_id", "ExternalCaseID", "Case ID"]
+                default_col = next((c for c in preferred if c in col_options), col_options[0])
+                ic1, ic2 = st.columns([2, 1])
+                with ic1:
+                    id_col = st.selectbox("ID Column", options=col_options,
+                                          index=col_options.index(default_col), key="id_col_select")
+                with ic2:
+                    chunk_size = st.number_input("IDs per string", min_value=10, max_value=500,
+                                                  value=100, step=10, key="id_chunk_size")
+                # Extract IDs — split each cell by comma, flatten, deduplicate (order-preserving)
+                seen_ids: dict = {}
+                for cell_val in df_id[id_col]:
+                    cell_str = str(cell_val).strip()
+                    if not cell_str or cell_str.lower() in ("nan", "none", ""):
+                        continue
+                    for sub in cell_str.split(","):
+                        sub = sub.strip()
+                        if sub and sub.lower() not in ("nan", "none", ""):
+                            seen_ids[sub] = None   # dict preserves insertion order
+                ids = list(seen_ids.keys())
+
+                if not ids:
+                    st.warning("No valid IDs found in the selected column.")
+                else:
+                    strings = generate_id_strings(ids, int(chunk_size))
+                    total_strings = len(strings)
+                    st.success(f"**{len(ids)}** IDs → **{total_strings}** string{'s' if total_strings > 1 else ''} "
+                               f"(≤ {int(chunk_size)} IDs each)")
+                    for si, s in enumerate(strings, 1):
+                        n_ids = len(s.split(","))
+                        st.markdown(
+                            f"**String {si} of {total_strings}** &nbsp;·&nbsp; "
+                            f"<span style='color:#F47920;font-weight:600;'>{n_ids} IDs</span>",
+                            unsafe_allow_html=True,
+                        )
+                        st.code(s, language=None)
+            except Exception as e:
+                st.error(f"Error reading file: {e}")
+
+
 # ──────────────────────────────────────────────
 # Footer
 # ──────────────────────────────────────────────
