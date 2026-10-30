@@ -12,6 +12,7 @@ from io import BytesIO
 from pathlib import Path
 from datetime import datetime, date
 import calendar
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 
 # ──────────────────────────────────────────────
 # Page Configuration
@@ -480,6 +481,12 @@ def _init_state():
         "dist_defaults": {"MCC": "Standard MCC", "CS": "Standard CS"},
         "prebatch_ready_to_confirm": False,
         "editor_profile": None,
+        "editor_rev": 0,     # bumped whenever the profile editor must rebuild its widgets
+        "dist_nav": 0,       # bumped to force the profile dropdown onto a given profile
+        "manual_added_ids": [],   # backlog cases the user added by hand in the preview
+        "manual_rev": 0,          # bumped to clear the "cases to add" picker after each add
+        "dist_inputs": None,      # profile / batch type / TWD flags used by the last Generate
+        "comp_inputs": None,      # TWD flags + whether the Pleteo file had Tags (for the composition cards)
         # Delivery history (persistent via GitHub)
         "delivery_history": {"MCC": [], "CS": []},
         "history_sha": None,
@@ -1182,25 +1189,111 @@ def case_matches_group(country_val: str, group_countries: list) -> bool:
     cv = str(country_val).lower()
     return any(gc.lower() in cv for gc in group_countries)
 
-def apply_batch_distribution(df, distribution, region_code, batch_type="standard"):
+def apply_batch_distribution(df, distribution, region_code, batch_type="standard",
+                             twd_ids=None, manual_ids=None):
     """
     batch_type:
         "standard"    — fill by country availability, no machine filtering
         "low"         — <3 machines only, fill by country, overflow any unused <3
         "golden"      — 3+ first, overflow unused 3+, then fill remainder with anything; warn if <3 used
         "traditional" — 50% global 3+ by country, then 50% <3 by country, then overflow anything
+
+    Optional case criteria stored in the profile. They never add cases or groups; they only steer
+    which cases fill each country group's quota while the list is generated:
+        distribution["twd"]     = {"enabled", "percent"}          cases listed in `twd_ids`
+                                  (Pleteo tag "Relaunch"): hard cap, % of the batch, split across
+                                  the country groups in proportion to their quotas.
+        distribution["vintage"] = {"enabled", "percent", "year"}  Last Event year <= year:
+                                  a target, % of the batch, picked first; a group's unused slots
+                                  roll over to groups that have more vintage cases.
+    manual_ids: Case IDs the user chose to add after seeing the preview. They join the selection
+    after the normal pass, ignore the TWD cap, and can never take the batch past its size.
     """
     country_col = "Countries" if region_code == "MCC" else "Country"
     df_work = df.copy().reset_index(drop=True)
     df_work["_m"] = pd.to_numeric(df_work["# All Time Machines"], errors="coerce").fillna(0)
 
     groups       = distribution["groups"]
-    total_quota  = sum(g["quota"] for g in groups)
+    quotas       = [g["quota"] for g in groups]
+    total_quota  = sum(quotas)
     n_groups     = len(groups)
+
+    # ── Case criteria: flags, batch-level numbers, per-group allowances ──
+    cfg_t, cfg_v   = distribution.get("twd") or {}, distribution.get("vintage") or {}
+    twd_on, vin_on = bool(cfg_t.get("enabled")), bool(cfg_v.get("enabled"))
+    cutoff   = int(cfg_v.get("year") or 2024)
+    twd_set  = {str(x) for x in (twd_ids or ())}
+    case_ids = df_work["Case ID"].astype(str).tolist()
+    years    = ([_year_of(v) for v in df_work["Last Event"]]
+                if "Last Event" in df_work.columns else [None] * len(df_work))
+    is_twd   = [twd_on and cid in twd_set for cid in case_ids]
+    is_vint  = [vin_on and (y is not None) and y <= cutoff for y in years]
+
+    def _pct(cfg, default):
+        try:
+            return max(0.0, min(100.0, float(cfg.get("percent", default))))
+        except (TypeError, ValueError):
+            return float(default)
+    twd_pct, vin_pct = _pct(cfg_t, 20.0), _pct(cfg_v, 10.0)
+    quota_w = [Decimal(int(q)) for q in quotas]
+    twd_cap_total = vin_target_total = 0
+    twd_caps, vin_targets = [0] * n_groups, [0] * n_groups
+    if total_quota > 0:
+        if twd_on:      # a maximum rounds DOWN
+            twd_cap_total = int((Decimal(total_quota) * _dec(twd_pct) / 100).to_integral_value(rounding=ROUND_FLOOR))
+            twd_caps = _largest_remainder(twd_cap_total, quota_w)
+        if vin_on:      # a target rounds to the nearest case
+            vin_target_total = int((Decimal(total_quota) * _dec(vin_pct) / 100).to_integral_value(rounding=ROUND_HALF_UP))
+            vin_targets = _largest_remainder(vin_target_total, quota_w)
 
     warnings         = []
     group_selections = [[] for _ in range(n_groups)]
     used             = set()
+    twd_count        = [0] * n_groups
+    vin_count        = [0] * n_groups
+    manual_set       = set()
+
+    def _group_of(i):
+        """First group whose countries match the case (None when it belongs to no group)."""
+        for gi_, grp_ in enumerate(groups):
+            if case_matches_group(df_work.loc[i, country_col], grp_["countries"]):
+                return gi_
+        return None
+
+    def _mark(gi, i):
+        group_selections[gi].append(i)
+        used.add(i)
+        if is_twd[i]:
+            twd_count[gi] += 1
+        if is_vint[i]:
+            vin_count[gi] += 1
+
+    def take(gi, candidates, n):
+        """Pick up to n unused candidates for group gi, in the order given. Vintage cases go first
+        until the group's vintage target is met; TWD cases are skipped once its TWD cap is reached."""
+        got = 0
+        if n <= 0:
+            return got
+        if vin_on:
+            for i in candidates:
+                if got >= n or vin_count[gi] >= vin_targets[gi]:
+                    break
+                if i in used or not is_vint[i]:
+                    continue
+                if is_twd[i] and twd_count[gi] >= twd_caps[gi]:
+                    continue
+                _mark(gi, i)
+                got += 1
+        for i in candidates:
+            if got >= n:
+                break
+            if i in used:
+                continue
+            if is_twd[i] and twd_count[gi] >= twd_caps[gi]:
+                continue
+            _mark(gi, i)
+            got += 1
+        return got
 
     # ── Build per-group country pools from the full dataset ──
     def country_pool(source_idx, group):
@@ -1213,28 +1306,48 @@ def apply_batch_distribution(df, distribution, region_code, batch_type="standard
         """Fill each group from source_idx up to its cap (or group quota if cap not given)."""
         for gi, group in enumerate(groups):
             cap = per_group_caps[gi] if per_group_caps else group["quota"]
-            already = len(group_selections[gi])
-            remaining = cap - already
+            remaining = cap - len(group_selections[gi])
             if remaining <= 0:
                 continue
-            pool = country_pool(source_idx, group)
-            take = pool[:remaining]
-            group_selections[gi].extend(take)
-            used.update(take)
+            take(gi, country_pool(source_idx, group), remaining)
 
     # ── Overflow: fill shortfalls from any eligible pool, from other groups' countries ──
     def overflow_fill(eligible_idx):
         """After main passes, fill any remaining shortfalls from eligible_idx."""
         for gi, group in enumerate(groups):
             shortfall = group["quota"] - len(group_selections[gi])
-            if shortfall <= 0:
+            if shortfall > 0:
+                take(gi, eligible_idx, shortfall)     # borrows regardless of country
+
+    # ── Vintage roll-over: a group short of vintage cases passes its unused slots on ──
+    if vin_on and vin_target_total > 0:
+        if batch_type == "low":
+            vint_pool = [i for i in df_work.index if df_work.loc[i, "_m"] < 3]
+        elif batch_type == "golden":
+            vint_pool = [i for i in df_work.index if df_work.loc[i, "_m"] >= 3]
+        else:
+            vint_pool = list(df_work.index)
+        n_free, n_twd = [0] * n_groups, [0] * n_groups
+        for i in vint_pool:
+            if not is_vint[i]:
                 continue
-            # Borrow from eligible pool regardless of country
-            available = [i for i in eligible_idx if i not in used]
-            take = available[:shortfall]
-            if take:
-                group_selections[gi].extend(take)
-                used.update(take)
+            g_ = _group_of(i)
+            if g_ is None:
+                continue
+            if is_twd[i]:
+                n_twd[g_] += 1
+            else:
+                n_free[g_] += 1
+        avail = [min(n_free[g_] + min(n_twd[g_], twd_caps[g_]), quotas[g_]) for g_ in range(n_groups)]
+        eff   = [min(vin_targets[g_], avail[g_]) for g_ in range(n_groups)]
+        unmet = vin_target_total - sum(eff)
+        for g_ in range(n_groups):
+            if unmet <= 0:
+                break
+            add = min(avail[g_] - eff[g_], unmet)
+            eff[g_] += add
+            unmet   -= add
+        vin_targets = eff
 
     # ────────────────────────────────────────────
     # STANDARD
@@ -1271,21 +1384,10 @@ def apply_batch_distribution(df, distribution, region_code, batch_type="standard
             any_remaining = [i for i in df_work.index if i not in used]
             # sort 3+ first, then <3
             any_remaining.sort(key=lambda i: -df_work.loc[i, "_m"])
-            under3_used = False
-            still_needed_global = total_quota - total_selected_so_far
-            overflow_taken = any_remaining[:still_needed_global]
-            for idx_val in overflow_taken:
-                if df_work.loc[idx_val, "_m"] < 3:
-                    under3_used = True
-                for gi, group in enumerate(groups):
-                    if len(group_selections[gi]) < group["quota"]:
-                        group_selections[gi].append(idx_val)
-                        used.add(idx_val)
-                        break
-                else:
-                    group_selections[0].append(idx_val)
-                    used.add(idx_val)
-            if under3_used:
+            before = set(used)
+            for gi, group in enumerate(groups):
+                take(gi, any_remaining, group["quota"] - len(group_selections[gi]))
+            if any(df_work.loc[i, "_m"] < 3 for i in used - before):
                 warnings.append(
                     "⚠️ **Golden Batch:** Cases with < 3 machines were included to complete "
                     "the total quota because not enough 3+ machine cases were available."
@@ -1305,12 +1407,8 @@ def apply_batch_distribution(df, distribution, region_code, batch_type="standard
         for gi, group in enumerate(groups):
             if premium_selected >= premium_target:
                 break
-            pool = country_pool(premium_idx, group)
-            can_take = min(len(pool), group["quota"], premium_target - premium_selected)
-            take = pool[:can_take]
-            group_selections[gi].extend(take)
-            used.update(take)
-            premium_selected += len(take)
+            premium_selected += take(gi, country_pool(premium_idx, group),
+                                     min(group["quota"], premium_target - premium_selected))
 
         # Pass 2 — <3 cases, fill remaining per-group quota
         fill_groups(under3_idx)
@@ -1318,6 +1416,28 @@ def apply_batch_distribution(df, distribution, region_code, batch_type="standard
         # Pass 3 — overflow: any unused cases for remaining shortfalls
         all_idx = list(df_work.index)
         overflow_fill(all_idx)
+
+    # ────────────────────────────────────────────
+    # Cases the user added by hand from the backlog (after the normal pass)
+    # ────────────────────────────────────────────
+    manual_added = []
+    if manual_ids:
+        by_cid = {}
+        for i in df_work.index:
+            if i not in used:
+                by_cid.setdefault(case_ids[i], i)
+        for cid in manual_ids:
+            if sum(len(s) for s in group_selections) >= total_quota:
+                break                                  # never past the batch size
+            i = by_cid.get(str(cid))
+            if i is None or i in used:
+                continue
+            g_ = _group_of(i)
+            if g_ is None:
+                continue
+            _mark(g_, i)
+            manual_set.add(i)
+            manual_added.append(case_ids[i])
 
     # ────────────────────────────────────────────
     # Build group reports + overflow warnings
@@ -1339,6 +1459,7 @@ def apply_batch_distribution(df, distribution, region_code, batch_type="standard
             "filled":   filled,
             "shortfall": max(shortfall, 0),
             "overflow_note": overflow_note,
+            "added":    sum(1 for i in group_selections[gi] if i in manual_set),
         })
         if overflow_cases:
             warnings.append(
@@ -1346,16 +1467,55 @@ def apply_batch_distribution(df, distribution, region_code, batch_type="standard
                 f"with overflow from other country groups to meet the quota."
             )
 
-    # Total quota warning
     total_selected = sum(len(s) for s in group_selections)
+    all_selected_idx = sorted(set(idx for sel in group_selections for idx in sel))
+    selected_set = set(all_selected_idx)
+
+    # Backlog cases the user could still add by hand (only for the criteria that are switched on)
+    cand_rows = []
+    if twd_on or vin_on:
+        for i in df_work.index:
+            if i in selected_set or not (is_twd[i] or is_vint[i]):
+                continue
+            g_ = _group_of(i)
+            if g_ is None:
+                continue
+            cand_rows.append({
+                "Case ID": case_ids[i],
+                "Entity Name": df_work.at[i, "Entity Name"] if "Entity Name" in df_work.columns else "",
+                "Country": df_work.at[i, country_col],
+                "# All Time Machines": df_work.at[i, "# All Time Machines"],
+                "Last Event": df_work.at[i, "Last Event"] if "Last Event" in df_work.columns else "",
+                "TWD": "Yes" if is_twd[i] else "",
+                "Vintage": "Yes" if is_vint[i] else "",
+                "Group": groups[g_]["name"], "_g": g_, "_m": float(df_work.at[i, "_m"]),
+            })
+    cand_rows.sort(key=lambda r: (r["_g"], -r["_m"]))
+    manual_candidates = pd.DataFrame(
+        [{k: v for k, v in r.items() if not k.startswith("_")} for r in cand_rows],
+        columns=["Case ID", "Entity Name", "Country", "# All Time Machines", "Last Event", "TWD", "Vintage", "Group"])
+
+    # Total quota warning
     if total_selected < total_quota:
+        msg = (f"🚨 **Total batch quota not met:** {total_selected} of {total_quota} cases selected. "
+               f"Not enough cases available in the uploaded file to complete the full batch.")
+        if cand_rows:
+            parts = []
+            n_t = sum(1 for r in cand_rows if r["TWD"])
+            n_v = sum(1 for r in cand_rows if r["Vintage"])
+            if n_t: parts.append(f"{n_t} TWD")
+            if n_v: parts.append(f"{n_v} Vintage")
+            msg += f" The backlog still holds {' and '.join(parts)} case(s) that you can add manually in the preview."
+        warnings.append(msg)
+
+    twd_selected, vin_selected = sum(twd_count), sum(vin_count)
+    if vin_on and vin_target_total > 0 and vin_selected < vin_target_total:
         warnings.append(
-            f"🚨 **Total batch quota not met:** {total_selected} of {total_quota} cases selected. "
-            f"Not enough cases available in the uploaded file to complete the full batch."
+            f"⚠️ **Vintage target not met:** {vin_selected} of {vin_target_total} vintage case(s) "
+            f"(last event in or before {cutoff}) could be included. Not enough eligible vintage cases were available."
         )
 
     # ── Build output DataFrame ──
-    all_selected_idx = sorted(set(idx for sel in group_selections for idx in sel))
     drop_cols = [c for c in ["_m"] if c in df_work.columns]
     selected_df = (df_work.loc[all_selected_idx]
                    .drop(columns=drop_cols)
@@ -1386,6 +1546,18 @@ def apply_batch_distribution(df, distribution, region_code, batch_type="standard
         "total_quota": total_quota, "total_backlog": len(backlog_df),
         "backlog_table": backlog_table, "profile_name": distribution["name"],
         "batch_type": batch_type,
+        "mode": distribution.get("mode", "fixed"),
+        "total": distribution.get("total"),
+        "criteria": {
+            "twd": {"enabled": twd_on, "percent": twd_pct, "cap_total": twd_cap_total,
+                    "selected": twd_selected, "caps": list(twd_caps), "by_group": list(twd_count)},
+            "vintage": {"enabled": vin_on, "percent": vin_pct, "year": cutoff,
+                        "target_total": vin_target_total, "selected": vin_selected,
+                        "targets": list(vin_targets), "by_group": list(vin_count)},
+        },
+        "manual_added": manual_added,
+        "manual_candidates": manual_candidates,
+        "shortfall": max(total_quota - total_selected, 0),
     }
     return selected_df, report, warnings
 
@@ -1447,6 +1619,329 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 st.markdown("")
 
+# ── Fixed vs Percentage group distribution: helpers ──────────────────────
+def _largest_remainder(total, weights):
+    """Split `total` into whole numbers proportional to `weights` (Decimals, sum > 0).
+    Every share is rounded down, then the leftover units go to the biggest fractional
+    parts (ties -> earlier position), so the result always adds up to `total`."""
+    wsum = sum(weights)
+    raw  = [Decimal(total) * w / wsum for w in weights]
+    base = [int(r.to_integral_value(rounding=ROUND_FLOOR)) for r in raw]
+    for i in sorted(range(len(raw)), key=lambda i: (-(raw[i] - base[i]), i))[: total - sum(base)]:
+        base[i] += 1
+    return base
+
+def _dec(x):
+    """Widget number -> exact Decimal with at most 2 decimals."""
+    try:
+        return Decimal(str(round(float(x), 2)))
+    except Exception:
+        return Decimal(0)
+
+def percent_problem(percents):
+    """None when the percentages are valid (none negative, adding up to exactly 100), else a message."""
+    vals = [_dec(x) for x in percents]
+    if not vals:
+        return "Add at least one group."
+    if any(v < 0 for v in vals):
+        return "Percentages cannot be negative."
+    s = sum(vals)
+    if s != Decimal(100):
+        return f"Percentages add up to {s.normalize():f}%, they must add up to exactly 100%."
+    return None
+
+def percents_from_quotas(quotas):
+    """Each quota's share as a percentage with 2 decimals, adding up to exactly 100.00."""
+    q = [Decimal(int(x)) for x in quotas]
+    if not q:
+        return []
+    if sum(q) == 0:
+        q = [Decimal(1)] * len(q)
+    return [float(Decimal(u) / Decimal(100)) for u in _largest_remainder(10000, q)]
+
+def quotas_from_percent(total, percents, strict=True):
+    """Whole-case quotas for `total` cases. strict=True requires the percentages to add up to 100;
+    strict=False (used only when converting modes) normalises whatever is there."""
+    vals = [_dec(x) for x in percents]
+    if strict:
+        msg = percent_problem(percents)
+        if msg:
+            raise ValueError(msg)
+    elif sum(vals) <= 0:
+        vals = [Decimal(1)] * len(vals)
+    return _largest_remainder(int(total), vals)
+
+def _year_of(v):
+    """Year of a Last Event value (ISO text first, then a general parse); None when unreadable."""
+    s = str(v).strip()
+    m = re.match(r"(\d{4})-\d{1,2}-\d{1,2}", s)
+    if m:
+        return int(m.group(1))
+    try:
+        ts = pd.to_datetime(s, errors="coerce")
+        return None if pd.isna(ts) else int(ts.year)
+    except Exception:
+        return None
+
+def compute_twd_ids(pl_df, case_ids):
+    """Case IDs (as they appear in the Prebatch) carrying the Pleteo tag "Relaunch": the exact tag,
+    any capitalization. For a grouped case, any of its sub-IDs counts."""
+    if pl_df is None or "Tags" not in pl_df.columns or "External Case ID" not in pl_df.columns:
+        return set()
+    relaunch = set()
+    for ext, tags in zip(pl_df["External Case ID"], pl_df["Tags"]):
+        toks = {t.strip().lower() for t in re.split(r"[;,|]", str(tags)) if t.strip()}
+        if "relaunch" in toks:
+            relaunch.add(str(ext).strip())
+    return {str(cid) for cid in case_ids
+            if any(s.strip() in relaunch for s in str(cid).split(","))}
+
+def batch_composition(df, twd_ids, tags_ok, vintage_year):
+    """Counts for the batch in the preview. HIGH = 3 or more total machines, LOW = fewer than 3
+    (so HIGH + LOW is the whole batch). TWD (Relaunch tag) and Vintage (last event in or before
+    the cutoff year) are flags that can overlap. TWD is None when the Pleteo file had no Tags."""
+    n = len(df)
+    if n and "# All Time Machines" in df.columns:
+        m = pd.to_numeric(df["# All Time Machines"], errors="coerce").fillna(0)
+    else:
+        m = pd.Series([0.0] * n)                       # missing column: nothing counts as HIGH
+    high = int((m >= 3).sum())
+    ids = df["Case ID"].astype(str) if (n and "Case ID" in df.columns) else []
+    twd = sum(1 for cid in ids if cid in twd_ids) if tags_ok else None
+    years = [_year_of(v) for v in df["Last Event"]] if ("Last Event" in df.columns and n) else []
+    return {"n": n, "high": high, "low": n - high, "twd": twd,
+            "vintage": sum(1 for y in years if y is not None and y <= vintage_year),
+            "vintage_year": vintage_year}
+
+def country_representation(df, profile, country_col):
+    """Target vs actual cases per profile group, using each case's OWN country (not the group
+    slot it filled). A case listing several countries counts once, under the first matching
+    group. Cases from countries in no group are reported as "Other (no group)"."""
+    groups = profile.get("groups", [])
+    n = len(df)
+    quotas = [int(g.get("quota", 0)) for g in groups]
+    total_target = sum(quotas)
+    pct_mode = profile.get("mode") == "percentage"
+    actual, other, no_country = [0] * len(groups), 0, 0
+    per_country = [{c: 0 for c in g.get("countries", [])} for g in groups]
+    values = df[country_col] if (n and country_col in df.columns) else []
+    for cv in values:
+        if str(cv).strip().lower() in ("", "nan", "none"):
+            no_country += 1                     # no country data at all (e.g. a case missing from the Conflict Check)
+            continue
+        gi = next((i for i, g in enumerate(groups) if case_matches_group(cv, g.get("countries", []))), None)
+        if gi is None:
+            other += 1
+            continue
+        actual[gi] += 1
+        text = str(cv).lower()
+        for c in groups[gi].get("countries", []):
+            if c.lower() in text:
+                per_country[gi][c] += 1
+                break
+    rows = []
+    for gi, g in enumerate(groups):
+        t_pct = (float(g["percent"]) if (pct_mode and g.get("percent") is not None)
+                 else (100.0 * quotas[gi] / total_target if total_target else 0.0))
+        a_pct = 100.0 * actual[gi] / n if n else 0.0
+        rows.append({"group": g["name"], "target": quotas[gi], "target_pct": t_pct, "actual": actual[gi],
+                     "actual_pct": a_pct, "diff": actual[gi] - quotas[gi], "diff_pp": a_pct - t_pct})
+    for label, k in (("Other (no group)", other), ("No country data", no_country)):
+        if k:
+            k_pct = 100.0 * k / n if n else 0.0
+            rows.append({"group": label, "target": 0, "target_pct": 0.0, "actual": k,
+                         "actual_pct": k_pct, "diff": k, "diff_pp": k_pct})
+    return {"rows": rows, "per_country": per_country, "n": n, "total_target": total_target, "pct_mode": pct_mode}
+
+def _fmt_pct(x):
+    return f"{x:.1f}%"
+
+def _signed(n):
+    return f"+{n}" if n > 0 else str(n)
+
+def representation_tables(rep):
+    """Display pieces for the country panel: (summary line, groups table, countries-inside-groups table)."""
+    rows = rep["rows"]
+    groups_tbl = pd.DataFrame([{
+        "Group": r["group"],
+        "Target cases": r["target"], "Target %": _fmt_pct(r["target_pct"]),
+        "Actual cases": r["actual"], "Actual %": _fmt_pct(r["actual_pct"]),
+        "Difference": _signed(r["diff"]),
+        "Match": "✅ exact" if r["diff"] == 0 else ("▲ over" if r["diff"] > 0 else "▼ under"),
+    } for r in rows])
+    gaps = [r for r in rows if r["diff"] != 0]
+    real = [r for r in rows if r["group"] not in ("Other (no group)", "No country data")]
+    if not gaps:
+        summary = "✅ Every group matches the profile exactly."
+    else:
+        worst = max(gaps, key=lambda r: abs(r["diff"]))
+        summary = (f"{sum(1 for r in real if r['diff'] == 0)} of {len(real)} groups match exactly. "
+                   f"Biggest gap: **{worst['group']}** {_signed(worst['diff'])} case(s) "
+                   f"({_fmt_pct(worst['actual_pct'])} actual vs {_fmt_pct(worst['target_pct'])} target).")
+    crows = []
+    for gi, pc in enumerate(rep["per_country"]):
+        for c, k in pc.items():
+            crows.append({"Group": rows[gi]["group"], "Country": c, "Cases": k,
+                          "% of batch": _fmt_pct(100.0 * k / rep["n"] if rep["n"] else 0.0)})
+    for r in rows[len(rep["per_country"]):]:       # "Other (no group)" / "No country data": keep the table adding up to the batch
+        crows.append({"Group": "—", "Country": r["group"], "Cases": r["actual"],
+                      "% of batch": _fmt_pct(100.0 * r["actual"] / rep["n"] if rep["n"] else 0.0)})
+    countries_tbl = pd.DataFrame(crows, columns=["Group", "Country", "Cases", "% of batch"])
+    return summary, groups_tbl, countries_tbl
+
+def _apply_manual(manual_ids):
+    """Re-run the distribution of the last Generate with the user's manual additions (or none)."""
+    inp = st.session_state.dist_inputs
+    final_df, report, dw = apply_batch_distribution(
+        st.session_state.raw_df, inp["profile"], inp["region"], batch_type=inp["batch_type"],
+        twd_ids=inp["twd_ids"], manual_ids=list(manual_ids))
+    st.session_state.result_df = final_df
+    st.session_state.dist_report = report
+    st.session_state.dist_warnings = dw
+    st.session_state.manual_added_ids = list(report.get("manual_added", []))
+    st.session_state.manual_rev += 1
+    log = st.session_state.generation_log
+    if log and not log[-1].get("confirmed"):
+        log[-1]["total"] = len(final_df)
+        log[-1]["cases"] = [(r["Case ID"], r.get("Entity Name", "")) for _, r in final_df.iterrows()]
+
+def normalize_profile(p):
+    """Copy of a stored profile with every field the editor needs. Profiles saved before the
+    percentage mode existed have no mode and are Fixed."""
+    q = copy.deepcopy(p)
+    q["mode"] = q.get("mode") if q.get("mode") in ("fixed", "percentage") else "fixed"
+    groups = q.setdefault("groups", [])
+    for g in groups:
+        g.setdefault("countries", [])
+        g["quota"] = int(g["quota"]) if g.get("quota") is not None else 1
+    if not q.get("total"):
+        q["total"] = max(sum(g["quota"] for g in groups), 1)
+    q["total"] = int(q["total"])
+    if any(g.get("percent") is None for g in groups):
+        for g, pc in zip(groups, percents_from_quotas([g["quota"] for g in groups])):
+            if g.get("percent") is None:
+                g["percent"] = pc
+    # Case criteria (TWD / Vintage): off unless the profile says otherwise
+    t = q.get("twd") if isinstance(q.get("twd"), dict) else {}
+    v = q.get("vintage") if isinstance(q.get("vintage"), dict) else {}
+    q["twd"] = {"enabled": bool(t.get("enabled", False)), "percent": float(t.get("percent", 20.0))}
+    q["vintage"] = {"enabled": bool(v.get("enabled", False)), "percent": float(v.get("percent", 10.0)),
+                    "year": int(v.get("year", 2024))}
+    return q
+
+def resolve_profile(p):
+    """(profile with final whole-case quotas, problem). Fixed profiles pass through unchanged;
+    Percentage profiles get their quotas computed from total + percentages."""
+    if p is None:
+        return None, None
+    q = copy.deepcopy(p)
+    if q.get("mode", "fixed") != "percentage":
+        return q, None
+    groups = q.get("groups", [])
+    if int(q.get("total") or 0) < 1:
+        return q, "Enter the total number of cases for this batch (at least 1)."
+    msg = percent_problem([g.get("percent", 0) for g in groups])
+    if msg:
+        return q, msg
+    for g, n in zip(groups, quotas_from_percent(q["total"], [g["percent"] for g in groups])):
+        g["quota"] = n
+    return q, None
+
+def _convert_mode(ep_dict, new_mode):
+    """Switch the working profile's mode, carrying the values over instead of starting empty."""
+    groups = ep_dict["groups"]
+    if new_mode == "percentage":
+        quotas = [int(g["quota"]) for g in groups]
+        ep_dict["total"] = min(max(sum(quotas), 1), 2000)
+        for g, pc in zip(groups, percents_from_quotas(quotas)):
+            g["percent"] = pc
+    else:
+        pcts = [g.get("percent", 0.0) for g in groups]
+        for g, n in zip(groups, quotas_from_percent(int(ep_dict.get("total") or 1), pcts, strict=False)):
+            g["quota"] = min(max(int(n), 1), 500)
+    ep_dict["mode"] = new_mode
+
+def _wk(name, gi=None):
+    """Widget key for the profile editor. The editor revision is part of every key, so loading
+    another profile (or adding/removing a group) builds fresh widgets instead of reusing stale values."""
+    rev = st.session_state.get("editor_rev", 0)
+    return f"{name}_{rev}" if gi is None else f"{name}_{rev}_{gi}"
+
+def _sync_ep_from_widgets(ep_dict):
+    """Copy the editor widgets' current values into the working copy."""
+    ss = st.session_state
+    ep_dict["name"] = ss.get(_wk("ep_name"), ep_dict["name"])
+    pct = ep_dict.get("mode") == "percentage"
+    if pct:
+        ep_dict["total"] = int(ss.get(_wk("ep_total"), ep_dict.get("total", 1)))
+    for gi, g in enumerate(ep_dict["groups"]):
+        g["name"]      = ss.get(_wk("gname", gi), g["name"])
+        g["countries"] = list(ss.get(_wk("gcountries", gi), g["countries"]))
+        if pct:
+            g["percent"] = float(round(float(ss.get(_wk("gpct", gi), g.get("percent", 0.0))), 2))
+        else:
+            g["quota"] = int(ss.get(_wk("gquota", gi), g["quota"]))
+    t, v = ep_dict.setdefault("twd", {}), ep_dict.setdefault("vintage", {})
+    t["enabled"] = bool(ss.get(_wk("ep_twd_on"), t.get("enabled", False)))
+    t["percent"] = float(ss.get(_wk("ep_twd_pct"), t.get("percent", 20.0)))
+    v["enabled"] = bool(ss.get(_wk("ep_vin_on"), v.get("enabled", False)))
+    v["percent"] = float(ss.get(_wk("ep_vin_pct"), v.get("percent", 10.0)))
+    v["year"]    = int(ss.get(_wk("ep_vin_year"), v.get("year", 2024)))
+    return ep_dict
+
+def _profile_save_problem(ep_dict):
+    """Why this working profile may not be saved (None if it is fine)."""
+    if not str(ep_dict.get("name", "")).strip():
+        return "The profile name cannot be empty."
+    if not ep_dict.get("groups"):
+        return "Add at least one group."
+    if ep_dict.get("mode") == "percentage":
+        if int(ep_dict.get("total") or 0) < 1:
+            return "Enter the total number of cases for this batch (at least 1)."
+        return percent_problem([g.get("percent", 0) for g in ep_dict["groups"]])
+    return None
+
+def _final_profile_for_save(ep_dict):
+    """Clean copy for storage: no editor-only keys, and quotas/percent/total always coherent."""
+    q = copy.deepcopy({k: v for k, v in ep_dict.items() if not k.startswith("_")})
+    if q.get("mode") == "percentage":
+        for g, n in zip(q["groups"], quotas_from_percent(q["total"], [g["percent"] for g in q["groups"]])):
+            g["quota"] = n
+    else:
+        q["mode"] = "fixed"
+        q["total"] = max(sum(int(g["quota"]) for g in q["groups"]), 1)
+        for g, pc in zip(q["groups"], percents_from_quotas([g["quota"] for g in q["groups"]])):
+            g["percent"] = pc
+    t, v = q.get("twd") or {}, q.get("vintage") or {}
+    q["twd"] = {"enabled": bool(t.get("enabled", False)), "percent": float(t.get("percent", 20.0))}
+    q["vintage"] = {"enabled": bool(v.get("enabled", False)), "percent": float(v.get("percent", 10.0)),
+                    "year": int(v.get("year", 2024))}
+    return q
+
+def replace_profile(region, old_name, profile):
+    """Replace `old_name` in place (keeps list order); append if it isn't there."""
+    profiles = st.session_state.dist_profiles.setdefault(region, [])
+    idx = next((i for i, pr in enumerate(profiles) if pr["name"] == old_name), None)
+    if idx is None:
+        profiles.append(copy.deepcopy(profile))
+    else:
+        profiles[idx] = copy.deepcopy(profile)
+
+def _profile_snapshot():
+    return copy.deepcopy(st.session_state.dist_profiles), copy.deepcopy(st.session_state.dist_defaults)
+
+def _profile_restore(snap):
+    st.session_state.dist_profiles, st.session_state.dist_defaults = snap
+
+def _push_profiles():
+    """Push history + profiles/defaults to GitHub. Returns (ok, error)."""
+    ok, err, sha = save_history_to_github(_full_payload(), st.session_state.history_sha)
+    if ok:
+        st.session_state.history_sha = sha
+        _fetch_github_history.clear()
+    return ok, err
+
+
 enable_batch = st.toggle(
     "Enable Batch Distribution",
     value=False, key="batch_toggle",
@@ -1456,6 +1951,8 @@ enable_batch = st.toggle(
         "If you've already manually selected the cases for this delivery, leave this off."
     ),
 )
+
+dist_problem = None   # why the chosen profile cannot be turned into quotas (blocks Generate)
 
 if enable_batch:
     st.info(
@@ -1470,7 +1967,7 @@ if enable_batch:
     _region_profiles = get_profile_names(_rp_for_config)
     _default_name = st.session_state.dist_defaults.get(_rp_for_config)
 
-    # Use pending selection if a save just happened, then clear it
+    # After a save the dropdown key changes, so `index` takes effect and lands on the saved profile
     _pending = st.session_state.pop("_pending_dist_select", None)
     if _pending and _pending in _region_profiles:
         _select_idx = _region_profiles.index(_pending)
@@ -1479,10 +1976,11 @@ if enable_batch:
     else:
         _select_idx = 0
 
+    _action_err = None
     ps_col, def_col, del_col = st.columns([3, 1.2, 1])
     with ps_col:
         selected_profile_name = st.selectbox("Distribution Profile", options=_region_profiles,
-                                              index=_select_idx, key="dist_select")
+                                              index=_select_idx, key=f"dist_select_{st.session_state.dist_nav}")
     with def_col:
         _is_default = (st.session_state.dist_defaults.get(_rp_for_config) == selected_profile_name)
         st.markdown("<br>", unsafe_allow_html=True)
@@ -1490,37 +1988,105 @@ if enable_batch:
             st.success("Default ✓")
         else:
             if st.button("Set as Default", key="set_default_btn", use_container_width=True):
+                _snap = _profile_snapshot()
                 set_default(_rp_for_config, selected_profile_name)
-                _ok, _err, _sha = save_history_to_github(_full_payload(), st.session_state.history_sha)
+                _ok, _err = _push_profiles()
                 if _ok:
-                    st.session_state.history_sha = _sha
-                    _fetch_github_history.clear()
-                st.rerun()
+                    st.rerun()
+                _profile_restore(_snap)
+                _action_err = f"❌ Not saved: GitHub could not be updated, so the default was not changed. {_err}"
     with del_col:
         st.markdown("<br>", unsafe_allow_html=True)
         if len(_region_profiles) > 1:
             if st.button("🗑 Delete", key="del_profile_btn", use_container_width=True):
+                _snap = _profile_snapshot()
                 delete_profile(_rp_for_config, selected_profile_name)
-                _ok, _err, _sha = save_history_to_github(_full_payload(), st.session_state.history_sha)
+                _ok, _err = _push_profiles()
                 if _ok:
-                    st.session_state.history_sha = _sha
-                    _fetch_github_history.clear()
-                st.rerun()
+                    st.session_state.dist_nav += 1
+                    st.rerun()
+                _profile_restore(_snap)
+                _action_err = f"❌ Not deleted: GitHub could not be updated, so nothing was changed. {_err}"
         else:
             st.button("🗑 Delete", disabled=True, use_container_width=True, key="del_profile_dis")
+    if _action_err:
+        st.error(_action_err)
 
     _selected_profile = get_profile(_rp_for_config, selected_profile_name)
     if _selected_profile is None:
         st.error("Profile not found. Please select another.")
         st.stop()
 
-    if (st.session_state.editor_profile is None
-            or st.session_state.editor_profile.get("_editing_name") != selected_profile_name):
-        ep = copy.deepcopy(_selected_profile)
-        ep["_editing_name"] = selected_profile_name
-        st.session_state.editor_profile = ep
-
+    _ed = st.session_state.editor_profile
+    if (_ed is None or _ed.get("_editing_name") != selected_profile_name
+            or _ed.get("_editing_region") != _rp_for_config):
+        _loaded = normalize_profile(_selected_profile)
+        _loaded["_editing_name"] = selected_profile_name
+        _loaded["_editing_region"] = _rp_for_config
+        st.session_state.editor_profile = _loaded
+        st.session_state.editor_rev += 1          # fresh editor widgets for the profile just loaded
     ep = st.session_state.editor_profile
+
+    # ── Group distribution mode (stored in the profile) ──
+    MODE_LABELS = {
+        "fixed":      "Fixed — a case count per group",
+        "percentage": "Percentage — a share (%) of the batch total per group",
+    }
+    _mode = st.radio(
+        "Group distribution", options=list(MODE_LABELS),
+        format_func=lambda k: MODE_LABELS[k],
+        index=0 if ep.get("mode", "fixed") == "fixed" else 1,
+        horizontal=True, key=_wk("ep_mode"),
+        help=(
+            "**Fixed:** you set how many cases each group receives.\n\n"
+            "**Percentage:** you enter the batch total once and a percentage per group. The app turns "
+            "that into whole-case quotas: every share is rounded down, then the leftover cases go to the "
+            "groups with the biggest fractional parts, so the quotas always add up to your total."
+        ),
+    )
+    if _mode != ep.get("mode", "fixed"):
+        _sync_ep_from_widgets(ep)                 # keep edits made under the old mode
+        _convert_mode(ep, _mode)
+        st.session_state.editor_rev += 1
+        st.rerun()
+
+    if ep["mode"] == "percentage":
+        ep["total"] = int(st.number_input(
+            "Total cases for this batch", min_value=1, max_value=2000,
+            value=min(int(ep.get("total") or 1), 2000), step=1, key=_wk("ep_total"),
+            help="How many cases this delivery needs. Press Update Profile to keep it as the profile's "
+                 "default; otherwise it applies to this delivery only.",
+        ))
+
+    # ── Case criteria (stored in the profile): TWD and Vintage ──
+    st.markdown("**Case criteria** — considered only when the batch list is generated. They don't add "
+                "cases or groups; they steer which cases fill each country group's quota.")
+    _cr1, _cr2 = st.columns(2)
+    with _cr1:
+        ep["twd"]["enabled"] = st.toggle(
+            "TWD — cases tagged “Relaunch”", value=bool(ep["twd"]["enabled"]), key=_wk("ep_twd_on"),
+            help="Cases whose Pleteo tags include “Relaunch”. Limits how many of them the batch may "
+                 "contain. Needs the Tags column in the Pleteo export.")
+        ep["twd"]["percent"] = float(st.number_input(
+            "TWD: maximum % of the batch", min_value=0.0, max_value=100.0, value=float(ep["twd"]["percent"]),
+            step=1.0, format="%.1f", key=_wk("ep_twd_pct"), disabled=not ep["twd"]["enabled"],
+            help="A hard cap, split across the country groups in proportion to their quotas."))
+    with _cr2:
+        ep["vintage"]["enabled"] = st.toggle(
+            "Vintage — old cases", value=bool(ep["vintage"]["enabled"]), key=_wk("ep_vin_on"),
+            help="Cases whose last event is in or before the cutoff year. They are picked first until "
+                 "the target is met; a warning shows if there aren't enough.")
+        _vc1, _vc2 = st.columns(2)
+        with _vc1:
+            ep["vintage"]["percent"] = float(st.number_input(
+                "Vintage: target % of the batch", min_value=0.0, max_value=100.0,
+                value=float(ep["vintage"]["percent"]), step=1.0, format="%.1f", key=_wk("ep_vin_pct"),
+                disabled=not ep["vintage"]["enabled"]))
+        with _vc2:
+            ep["vintage"]["year"] = int(st.number_input(
+                "Cutoff year", min_value=1990, max_value=2100, value=int(ep["vintage"]["year"]),
+                step=1, key=_wk("ep_vin_year"), disabled=not ep["vintage"]["enabled"],
+                help="A case is vintage when its last event year is this year or earlier."))
 
     BATCH_TYPE_OPTIONS = {
         "standard":    "📊 Batch Standard — Fill by country availability (no machine filter)",
@@ -1546,9 +2112,10 @@ if enable_batch:
     )
 
     with st.expander("✏️ Edit Profile", expanded=False):
-        new_name = st.text_input("Profile Name", value=ep["name"], key="ep_name")
-        ep["name"] = new_name
-        st.markdown("**Groups** — set countries and quota for each group.")
+        ep["name"] = st.text_input("Profile Name", value=ep["name"], key=_wk("ep_name"))
+        _pct = ep["mode"] == "percentage"
+        st.markdown("**Groups** — " + ("set the countries and the share (%) of the batch each group receives."
+                                       if _pct else "set countries and quota for each group."))
         country_list = MCC_COUNTRIES if _rp_for_config == "MCC" else CS_COUNTRIES
 
         groups_to_delete = []
@@ -1561,93 +2128,125 @@ if enable_batch:
                 gc1, gc2, gc3, gc4 = st.columns([2.5, 3, 1.2, 0.5])
                 with gc1:
                     grp["name"] = st.text_input("Group Name", value=grp["name"],
-                                                 key=f"gname_{gi}", label_visibility="collapsed")
+                                                 key=_wk("gname", gi), label_visibility="collapsed")
                 with gc2:
                     grp["countries"] = st.multiselect(
                         "Countries", options=available_options, default=current_selection,
-                        key=f"gcountries_{gi}", label_visibility="collapsed",
+                        key=_wk("gcountries", gi), label_visibility="collapsed",
                         help="Countries already assigned to another group are hidden.",
                     )
                 with gc3:
-                    grp["quota"] = st.number_input("Quota", min_value=1, max_value=500,
-                                                    value=int(grp["quota"]), step=1,
-                                                    key=f"gquota_{gi}", label_visibility="collapsed")
+                    if _pct:
+                        grp["percent"] = float(st.number_input(
+                            "Percent", min_value=0.0, max_value=100.0, value=float(grp.get("percent", 0.0)),
+                            step=0.5, format="%.2f", key=_wk("gpct", gi), label_visibility="collapsed",
+                            help="This group's share of the batch total, in %."))
+                    else:
+                        grp["quota"] = st.number_input("Quota", min_value=1, max_value=500,
+                                                        value=int(grp["quota"]), step=1,
+                                                        key=_wk("gquota", gi), label_visibility="collapsed")
                 with gc4:
                     if st.button("✕", key=f"gdel_{gi}", help="Remove this group"):
                         groups_to_delete.append(gi)
 
-        for gi in reversed(groups_to_delete):
-            ep["groups"].pop(gi)
-        if groups_to_delete: st.rerun()
+        if groups_to_delete:
+            _sync_ep_from_widgets(ep)
+            for gi in reversed(groups_to_delete):
+                ep["groups"].pop(gi)
+            st.session_state.editor_rev += 1      # widgets are keyed by position: rebuild them
+            st.rerun()
 
-        total_quota = sum(g["quota"] for g in ep["groups"])
-        st.caption(f"Total quota across all groups: **{total_quota}** cases")
+        if _pct:
+            _pcts = [g.get("percent", 0.0) for g in ep["groups"]]
+            _pmsg = percent_problem(_pcts)
+            if _pmsg:
+                st.error(f"🚫 {_pmsg}")
+            else:
+                _qs = quotas_from_percent(ep["total"], _pcts)
+                st.success("✅ Percentages add up to 100%.")
+                st.markdown(f"**Resulting cases** (total {sum(_qs)}): "
+                            + " · ".join(f"{g['name']} **{n}**" for g, n in zip(ep["groups"], _qs)))
+                for g, n in zip(ep["groups"], _qs):
+                    if n == 0:
+                        st.warning(f"Group **{g['name']}** rounds to 0 cases.")
+        else:
+            total_quota = sum(g["quota"] for g in ep["groups"])
+            st.caption(f"Total quota across all groups: **{total_quota}** cases")
 
         if st.button("＋ Add Group", key="add_group_btn"):
-            ep["groups"].append({"name": "New Group", "countries": [], "quota": 10}); st.rerun()
+            _sync_ep_from_widgets(ep)
+            ep["groups"].append({"name": "New Group", "countries": [], "quota": 10, "percent": 0.0})
+            st.session_state.editor_rev += 1
+            st.rerun()
 
         st.markdown("---")
+        _save_err = None
         save_col, saveas_col = st.columns(2)
-
-        def _sync_ep_from_widgets(ep_dict):
-            """Explicitly pull latest widget values from st.session_state into ep."""
-            ep_dict["name"] = st.session_state.get("ep_name", ep_dict["name"])
-            for gi, grp in enumerate(ep_dict["groups"]):
-                grp["name"]      = st.session_state.get(f"gname_{gi}",      grp["name"])
-                grp["countries"] = st.session_state.get(f"gcountries_{gi}", grp["countries"])
-                grp["quota"]     = int(st.session_state.get(f"gquota_{gi}", grp["quota"]))
-            return ep_dict
 
         with save_col:
             if st.button("💾 Update Profile", type="primary", use_container_width=True, key="save_profile"):
                 _sync_ep_from_widgets(ep)
-                profile_to_save = {k: v for k, v in ep.items() if not k.startswith("_")}
-                old_name = ep.get("_editing_name", "")
-                if old_name != profile_to_save["name"] and old_name:
-                    delete_profile(_rp_for_config, old_name)
-                    if st.session_state.dist_defaults.get(_rp_for_config) == old_name:
-                        set_default(_rp_for_config, profile_to_save["name"])
-                save_profile(_rp_for_config, profile_to_save)
-                ep["_editing_name"] = profile_to_save["name"]
-                st.session_state["_pending_dist_select"] = profile_to_save["name"]
-                # Persist profiles to GitHub
-                _ok, _err, _sha = save_history_to_github(_full_payload(), st.session_state.history_sha)
-                if _ok:
-                    st.session_state.history_sha = _sha
-                    _fetch_github_history.clear()
+                _old = ep.get("_editing_name", "")
+                _new_name = str(ep.get("name", "")).strip()
+                _problem = _profile_save_problem(ep)
+                if not _problem and _new_name != _old and _new_name in get_profile_names(_rp_for_config):
+                    _problem = f"A profile named “{_new_name}” already exists. Pick another name."
+                if _problem:
+                    _save_err = f"🚫 Not saved. {_problem}"
                 else:
-                    st.warning(f"Profile saved locally but GitHub push failed: {_err}")
-                st.toast(f"✅ Profile **{profile_to_save['name']}** updated.", icon="✅")
-                st.rerun()
+                    ep["name"] = _new_name
+                    _to_save = _final_profile_for_save(ep)
+                    _snap = _profile_snapshot()
+                    _was_default = st.session_state.dist_defaults.get(_rp_for_config) == _old
+                    replace_profile(_rp_for_config, _old, _to_save)
+                    if _was_default and _old != _new_name:
+                        set_default(_rp_for_config, _new_name)
+                    _ok, _err = _push_profiles()
+                    if _ok:
+                        ep["_editing_name"] = _new_name
+                        st.session_state["_pending_dist_select"] = _new_name
+                        st.session_state.dist_nav += 1
+                        st.session_state.editor_rev += 1
+                        st.toast(f"✅ Profile **{_new_name}** updated.", icon="✅")
+                        st.rerun()
+                    _profile_restore(_snap)
+                    _save_err = f"❌ Not saved: GitHub could not be updated, so nothing was changed. {_err}"
 
         with saveas_col:
-            new_profile_name = st.text_input(
-                "Save as new profile name", key="saveas_name",
-                placeholder="New profile name…",
-            )
+            st.text_input("Save as new profile name", key=_wk("saveas_name"),
+                          placeholder="New profile name…")
             if st.button("💾 Save as New", use_container_width=True, key="saveas_btn"):
-                clean_name = st.session_state.get("saveas_name", "").strip()
-                if clean_name:
-                    _sync_ep_from_widgets(ep)
-                    new_p = copy.deepcopy({k: v for k, v in ep.items() if not k.startswith("_")})
-                    new_p["name"] = clean_name
-                    save_profile(_rp_for_config, new_p)
-                    st.session_state["_pending_dist_select"] = clean_name
-                    st.session_state["saveas_name"] = ""
-                    new_ep = copy.deepcopy(new_p)
-                    new_ep["_editing_name"] = clean_name
-                    st.session_state.editor_profile = new_ep
-                    # Persist profiles to GitHub
-                    _ok, _err, _sha = save_history_to_github(_full_payload(), st.session_state.history_sha)
-                    if _ok:
-                        st.session_state.history_sha = _sha
-                        _fetch_github_history.clear()
-                    else:
-                        st.warning(f"Profile saved locally but GitHub push failed: {_err}")
-                    st.toast(f"✅ New profile **{clean_name}** created.", icon="✅")
-                    st.rerun()
+                _clean = st.session_state.get(_wk("saveas_name"), "").strip()
+                _sync_ep_from_widgets(ep)
+                if not _clean:
+                    _problem = "Enter a name for the new profile."
+                elif _clean in get_profile_names(_rp_for_config):
+                    _problem = f"A profile named “{_clean}” already exists. Choose a different name."
                 else:
-                    st.warning("Enter a name for the new profile.")
+                    _tmp = copy.deepcopy(ep)
+                    _tmp["name"] = _clean
+                    _problem = _profile_save_problem(_tmp)
+                if _problem:
+                    _save_err = f"🚫 Not saved. {_problem}"
+                else:
+                    _new_p = _final_profile_for_save({**ep, "name": _clean})
+                    _snap = _profile_snapshot()
+                    st.session_state.dist_profiles.setdefault(_rp_for_config, []).append(copy.deepcopy(_new_p))
+                    _ok, _err = _push_profiles()
+                    if _ok:
+                        _new_ep = normalize_profile(_new_p)
+                        _new_ep["_editing_name"] = _clean
+                        _new_ep["_editing_region"] = _rp_for_config
+                        st.session_state.editor_profile = _new_ep
+                        st.session_state["_pending_dist_select"] = _clean
+                        st.session_state.dist_nav += 1
+                        st.session_state.editor_rev += 1
+                        st.toast(f"✅ New profile **{_clean}** created.", icon="✅")
+                        st.rerun()
+                    _profile_restore(_snap)
+                    _save_err = f"❌ Not saved: GitHub could not be updated, so nothing was changed. {_err}"
+        if _save_err:
+            st.error(_save_err)
 
     with st.expander("⬆ Import / Export Profiles (JSON)", expanded=False):
         exp_col, imp_col = st.columns(2)
@@ -1665,12 +2264,24 @@ if enable_batch:
                 except Exception as e:
                     st.error(f"Import failed: {e}")
 else:
-    # Toggle OFF — load default profile silently, apply Standard type
+    # Toggle OFF — the region's default profile (fixed or percentage), Standard type
     _default_name = st.session_state.dist_defaults.get(region_code)
-    ep = copy.deepcopy(get_profile(region_code, _default_name)) if _default_name else None
+    _dp = get_profile(region_code, _default_name) if _default_name else None
+    ep = normalize_profile(_dp) if _dp else None
     if ep:
         ep["_editing_name"] = _default_name
     batch_type = "standard"
+    if ep and ((ep.get("twd") or {}).get("enabled") or (ep.get("vintage") or {}).get("enabled")):
+        st.caption(f"ℹ️ The default profile “{_default_name}” has TWD / Vintage switched on, so they apply to this batch.")
+
+# Turn the working profile into final whole-case quotas (percentage profiles are converted here)
+if ep is not None:
+    ep_resolved, dist_problem = resolve_profile(ep)
+else:
+    ep_resolved, dist_problem = None, None
+if dist_problem:
+    st.error(f"🚫 The distribution profile can't be applied yet: {dist_problem} "
+             "Generate Prebatch File stays locked until this is fixed.")
 
 
 # ──────────────────────────────────────────────
@@ -1915,6 +2526,13 @@ if all_uploaded:
             "fix the GitHub connection, then press 🔄."
         )
 
+    _tags_missing = bool(ep_resolved and (ep_resolved.get("twd") or {}).get("enabled")
+                         and pl_df_v is not None and "Tags" not in pl_df_v.columns)
+    if _tags_missing:
+        st.error("🚫 TWD needs the **Tags** column from the Pleteo export, and the uploaded Pleteo file "
+                 "doesn't have it. Re-export it with tags, or switch TWD off in the profile. "
+                 "Generate Prebatch File stays locked.")
+
     btn_col1, btn_col2 = st.columns(2)
 
     # ── Validate Batch ──
@@ -1944,10 +2562,13 @@ if all_uploaded:
 
     # ── Generate Prebatch (only after validation) ──
     with btn_col2:
-        generate_disabled = not all_valid or not st.session_state.batch_validated
+        generate_disabled = (not all_valid or not st.session_state.batch_validated
+                             or bool(dist_problem) or _tags_missing)
         generate_help = (
             "Run Validate Batch first." if not st.session_state.batch_validated else
             "Resolve file validation errors first." if not all_valid else
+            "Fix the distribution profile first (see the message in the Batch Distribution section)." if dist_problem else
+            "TWD needs the Tags column in the Pleteo export." if _tags_missing else
             "Generate the Prebatch output file."
         )
         if st.button("▶ Generate Prebatch File", type="primary", use_container_width=True,
@@ -1967,20 +2588,29 @@ if all_uploaded:
                     st.session_state.dist_report   = None
                     st.session_state.dist_warnings = []
                     st.session_state.dist_applied  = False
+                    st.session_state.manual_added_ids = []      # a fresh Generate starts without manual additions
+                    st.session_state.dist_inputs   = None
                     st.session_state.prebatch_ready_to_confirm = True
+
+                    _tags_ok = bool(pl_df_v is not None and "Tags" in pl_df_v.columns)
+                    _twd_all = compute_twd_ids(pl_df_v, raw_df["Case ID"]) if _tags_ok else set()
+                    st.session_state.comp_inputs = {"twd_ids": _twd_all, "tags_ok": _tags_ok}
 
                     # Always apply distribution — toggle controls type/profile choice only
                     # Toggle OFF = Standard type with default profile
-                    if ep is not None:
-                        profile_clean = {k: v for k, v in ep.items() if not k.startswith("_")}
+                    if ep_resolved is not None:
+                        profile_clean = {k: v for k, v in ep_resolved.items() if not k.startswith("_")}
                         try:
+                            _twd_ids = _twd_all      # only enforced when the profile's TWD toggle is on
                             final_df, report, dw = apply_batch_distribution(
-                                raw_df, profile_clean, region_code, batch_type=batch_type
+                                raw_df, profile_clean, region_code, batch_type=batch_type, twd_ids=_twd_ids
                             )
                             st.session_state.result_df     = final_df
                             st.session_state.dist_report   = report
                             st.session_state.dist_warnings = dw
                             st.session_state.dist_applied  = True
+                            st.session_state.dist_inputs   = {"profile": profile_clean, "batch_type": batch_type,
+                                                              "region": region_code, "twd_ids": _twd_ids}
                         except Exception as dist_err:
                             st.warning(f"Distribution could not be applied: {dist_err}. Using full merge.")
                             st.session_state.result_df = raw_df
@@ -2039,6 +2669,56 @@ else:
     st.info(f"Upload the remaining file(s) to proceed: **{', '.join(missing)}**")
 
 
+def _render_batch_panel(result_df, rp, dist_applied, dist_report):
+    """Batch composition cards + country representation for the batch shown in the preview."""
+    # ── Batch composition + country representation (recomputed on every run, so manual additions show up) ──
+    _ci = st.session_state.comp_inputs or {}
+    _prof = (st.session_state.dist_inputs or {}).get("profile") if dist_applied else None
+    _vyear = int(((_prof or {}).get("vintage") or {}).get("year", 2024))
+    _comp = batch_composition(result_df, _ci.get("twd_ids", set()), bool(_ci.get("tags_ok")), _vyear)
+    _crit = (dist_report.get("criteria") or {}) if (dist_applied and dist_report) else {}
+    _pcs = lambda x: f"{100.0 * x / _comp['n']:.1f}%" if _comp["n"] else "0.0%"
+    st.markdown("**Batch composition**")
+    _k1, _k2, _k3, _k4 = st.columns(4)
+    _k1.metric("HIGH · 3+ machines", f"{_comp['high']} ({_pcs(_comp['high'])})")
+    _k2.metric("LOW · under 3 machines", f"{_comp['low']} ({_pcs(_comp['low'])})")
+    if _comp["twd"] is None:
+        _k3.metric("TWD · Relaunch tag", "n/a", delta="needs the Tags column", delta_color="off")
+    elif (_crit.get("twd") or {}).get("enabled"):
+        _cap = _crit["twd"]["cap_total"]
+        _k3.metric("TWD · Relaunch tag", f"{_comp['twd']} ({_pcs(_comp['twd'])})",
+                   delta=(f"over max {_cap}" if _comp["twd"] > _cap else f"max {_cap}"),
+                   delta_color=("inverse" if _comp["twd"] > _cap else "off"))
+    else:
+        _k3.metric("TWD · Relaunch tag", f"{_comp['twd']} ({_pcs(_comp['twd'])})")
+    if (_crit.get("vintage") or {}).get("enabled"):
+        _tgt = _crit["vintage"]["target_total"]
+        _k4.metric(f"Vintage · last event ≤ {_comp['vintage_year']}", f"{_comp['vintage']} ({_pcs(_comp['vintage'])})",
+                   delta=(f"below target {_tgt}" if _comp["vintage"] < _tgt else f"target {_tgt}"),
+                   delta_color=("inverse" if _comp["vintage"] < _tgt else "off"))
+    else:
+        _k4.metric(f"Vintage · last event ≤ {_comp['vintage_year']}", f"{_comp['vintage']} ({_pcs(_comp['vintage'])})")
+    st.caption(f"HIGH + LOW = all {_comp['n']} cases in the preview. TWD and Vintage are flags and can overlap.")
+
+    if _prof:
+        _rep = country_representation(result_df, _prof, "Countries" if rp == "MCC" else "Country")
+        _summary, _gtbl, _ctbl = representation_tables(_rep)
+        with st.expander("🌎 Country representation vs profile", expanded=True):
+            st.markdown(_summary)
+            st.dataframe(_gtbl, hide_index=True, use_container_width=True)
+            if _rep["n"] != _rep["total_target"]:
+                st.caption(f"The preview has {_rep['n']} of the {_rep['total_target']} requested cases, so actual % "
+                           f"is a share of the {_rep['n']} cases shown.")
+            if _rep["pct_mode"]:
+                st.caption("Percentage profile: the target % is the one set in the profile; target cases are its whole-case result.")
+            st.caption("Actual counts use each case's own country. A case listing several countries counts once, "
+                       "under the first matching group. \"Other (no group)\" = a country that is in no profile group; "
+                       "\"No country data\" = the case has no country (for example, it is missing from the Conflict Check).")
+        with st.expander("Countries inside each group", expanded=False):
+            st.dataframe(_ctbl, hide_index=True, use_container_width=True)
+
+
+
 # ──────────────────────────────────────────────
 # Results + Confirm Batch Delivery
 # ──────────────────────────────────────────────
@@ -2057,7 +2737,8 @@ if st.session_state.result_df is not None:
         batch_label = BATCH_LABELS.get(dist_report.get("batch_type", "standard"), "Batch")
         is_custom = enable_batch
         st.markdown(
-            f"**Prebatch — {dist_report['profile_name']} · {batch_label}** "
+            f"**Prebatch — {dist_report['profile_name']} · {batch_label}"
+            f"{(' · % of ' + str(dist_report.get('total'))) if dist_report.get('mode') == 'percentage' else ''}** "
             f"&nbsp;·&nbsp; {len(result_df)} of {len(raw_df)} cases selected"
         )
         for w in dist_warnings:
@@ -2067,6 +2748,8 @@ if st.session_state.result_df is not None:
             gr_cols = st.columns(len(dist_report["groups"]))
             for col, grp in zip(gr_cols, dist_report["groups"]):
                 overflow_note = " (+overflow)" if grp.get("overflow_note") else ""
+                if grp.get("added"):
+                    overflow_note += f" (+{grp['added']} added)"
                 delta_val = "On target" if grp["shortfall"] == 0 else f"-{grp['shortfall']} short"
                 col.metric(
                     label=grp["group"],
@@ -2074,6 +2757,28 @@ if st.session_state.result_df is not None:
                     delta=f"{delta_val}{overflow_note}",
                     delta_color="normal" if grp["shortfall"] == 0 else "inverse",
                 )
+
+        _crit = dist_report.get("criteria") or {}
+        _t, _v = _crit.get("twd") or {}, _crit.get("vintage") or {}
+        if _t.get("enabled") or _v.get("enabled"):
+            _cc1, _cc2 = st.columns(2)
+            if _t.get("enabled"):
+                _over_t = _t["selected"] - _t["cap_total"]
+                _cc1.metric("TWD (Relaunch)", f"{_t['selected']} / max {_t['cap_total']}",
+                            delta=(f"+{_over_t} over the cap (added manually)" if _over_t > 0 else "within the cap"),
+                            delta_color=("inverse" if _over_t > 0 else "off"))
+            if _v.get("enabled"):
+                _gap_v = _v["selected"] - _v["target_total"]
+                _cc2.metric(f"Vintage (≤ {_v['year']})", f"{_v['selected']} / target {_v['target_total']}",
+                            delta=("target met" if _gap_v >= 0 else f"{_gap_v} short"),
+                            delta_color=("off" if _gap_v >= 0 else "inverse"))
+            with st.expander("TWD / Vintage detail by group", expanded=False):
+                _rows = []
+                for gi_, g_ in enumerate(dist_report["groups"]):
+                    _rows.append({"Group": g_["group"],
+                                  "TWD (selected / cap)": (f"{_t['by_group'][gi_]} / {_t['caps'][gi_]}" if _t.get("enabled") else "off"),
+                                  "Vintage (selected / target)": (f"{_v['by_group'][gi_]} / {_v['targets'][gi_]}" if _v.get("enabled") else "off")})
+                st.dataframe(pd.DataFrame(_rows), hide_index=True, use_container_width=True)
 
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Cases in Prebatch",       len(result_df))
@@ -2136,7 +2841,49 @@ if st.session_state.result_df is not None:
 
     # ── Prebatch preview + download ──
     st.subheader("Prebatch Preview")
-    st.dataframe(result_df, use_container_width=True, height=380)
+
+    try:
+        _render_batch_panel(result_df, rp, dist_applied, dist_report)
+    except Exception as _panel_err:          # informational panel: never let it block the results or Confirm
+        st.warning(f"The batch composition panel could not be built: {_panel_err}")
+
+    _added_ids = list(dist_report.get("manual_added", [])) if (dist_applied and dist_report) else []
+    if _added_ids:
+        _aset = set(_added_ids)
+        def _mark_added(row):
+            return ["background-color: #FFF3CD; color: #1A1A1A;" if str(row["Case ID"]) in _aset else "" for _ in row]
+        st.dataframe(result_df.style.apply(_mark_added, axis=1), use_container_width=True, height=380)
+    else:
+        st.dataframe(result_df, use_container_width=True, height=380)
+
+    # ── Add TWD / Vintage cases from the backlog (only while the batch is short) ──
+    if dist_applied and dist_report and st.session_state.prebatch_ready_to_confirm and st.session_state.dist_inputs:
+        if _added_ids:
+            st.info(f"✋ {len(_added_ids)} case(s) were added manually from the backlog (highlighted in the preview).")
+            if st.button("↩ Remove the manually added cases", key="manual_undo_btn"):
+                _apply_manual([])
+                st.rerun()
+        _cands = dist_report.get("manual_candidates")
+        _short = int(dist_report.get("shortfall", 0))
+        if _short > 0 and _cands is not None and len(_cands) > 0:
+            with st.expander(f"➕ Add TWD / Vintage cases from the backlog — the batch is short by {_short}", expanded=True):
+                st.caption(f"These cases were not selected (for example, held back by the TWD cap). You can add up to "
+                           f"{_short} of them. Each one counts toward its own country group.")
+                st.dataframe(_cands, hide_index=True, use_container_width=True,
+                             height=min(35 * len(_cands) + 40, 320))
+                _labels = {r["Case ID"]: (f"{r['Case ID']} — {r['Entity Name']} · {r['Country']} · "
+                                          f"{r['# All Time Machines']} machines"
+                                          f"{' · TWD' if r['TWD'] else ''}{' · Vintage' if r['Vintage'] else ''}")
+                           for _, r in _cands.iterrows()}
+                _pick = st.multiselect("Cases to add", options=list(_labels), format_func=lambda c: _labels[c],
+                                       key=f"manual_pick_{st.session_state.manual_rev}")
+                _over = len(_pick) > _short
+                if _over:
+                    st.warning(f"Pick at most {_short} case(s): the batch is short by {_short}.")
+                if st.button("➕ Add to Prebatch", type="primary", key="manual_add_btn",
+                             disabled=(not _pick) or _over):
+                    _apply_manual(list(_added_ids) + list(_pick))
+                    st.rerun()
     st.download_button(
         label=f"⬇ Download Prebatch_{rp}.xlsx",
         data=to_excel(result_df),
@@ -2192,7 +2939,10 @@ if st.session_state.result_df is not None:
         if dist_applied and dist_report:
             profile_name = dist_report.get("profile_name", "—")
             batch_label  = BATCH_LABELS.get(dist_report.get("batch_type","standard"), "Batch")
-            confirm_label = f"{profile_name} · {batch_label}"
+            _pct_txt = f" (% of {dist_report.get('total')})" if dist_report.get("mode") == "percentage" else ""
+            confirm_label = f"{profile_name}{_pct_txt} · {batch_label}"
+            if dist_report.get("manual_added"):
+                confirm_label += f" · +{len(dist_report['manual_added'])} added manually"
         else:
             confirm_label = "Full Prebatch (no distribution applied)"
 
