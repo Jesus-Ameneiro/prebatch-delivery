@@ -18491,7 +18491,8 @@
             "countries": [
               "Mexico"
             ],
-            "quota": 84
+            "quota": 72,
+            "percent": 60.0
           },
           {
             "name": "Panama · Costa Rica · Dominicana",
@@ -18505,9 +18506,21 @@
               "Nicaragua",
               "El Salvador"
             ],
-            "quota": 36
+            "quota": 48,
+            "percent": 40.0
           }
-        ]
+        ],
+        "mode": "percentage",
+        "total": 120,
+        "twd": {
+          "enabled": false,
+          "percent": 21.0
+        },
+        "vintage": {
+          "enabled": false,
+          "percent": 10.0,
+          "year": 2024
+        }
       }
     ],
     "CS": [
