@@ -225,8 +225,14 @@ def _step(n, title, desc=""):
 # ──────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────
-QS_REQUIRED = {"Case ID", "Case Tier", "Total Machines", "Actionable Machines", "Approved Machines", "First Event", "Last Event"}
-PL_REQUIRED = {"External Case ID", "Updated"}
+QS_REQUIRED = {"Case ID"}      # optional file: only used for an information cross-check
+PL_REQUIRED = {"External Case ID", "Entity", "# Total Machines", "# Approved Machines",
+               "Case Tier", "First Event", "Last Event", "Country", "Updated"}
+# Pleteo exports countries as ISO-3 codes; the Conflict Check and the profiles use names
+ISO3_COUNTRY = {"MEX": "Mexico", "CRI": "Costa Rica", "PAN": "Panama", "DOM": "Dominican Republic",
+                "HND": "Honduras", "BLZ": "Belize", "GTM": "Guatemala", "NIC": "Nicaragua", "SLV": "El Salvador",
+                "CHL": "Chile", "ARG": "Argentina", "COL": "Colombia", "ECU": "Ecuador", "PER": "Peru",
+                "URY": "Uruguay", "BOL": "Bolivia", "PRY": "Paraguay", "USA": "USA"}
 CC_REQUIRED = {"Case ID", "Machine Overview", "Investigation Notes", "Pleteo Entity Name", "Company Name", "Actionable Domains"}
 
 MCC_COLUMNS = [
@@ -545,6 +551,9 @@ def _init_state():
         "validation_excluded": [],
         "validation_excl_msgs": [],
         "validation_clean": False,
+        "history_checked": False,   # Generate ran the history check itself (Validate is optional)
+        "recent_records": [],       # rows delivered within 6 months (shown for the user to decide)
+        "recent_applied": [],       # the recent rows the last Generate left out (user's choice)
         "excluded_count": 0,
         "sub_id_deduped": [],
     }
@@ -830,28 +839,28 @@ if st.session_state.get("_last_region") != region_code:
     st.session_state.validation_warnings = []
     st.session_state.validation_excluded = []
     st.session_state.validation_clean = False
+    st.session_state.history_checked = False
+    st.session_state.recent_records = []
+    st.session_state.recent_applied = []
+    st.session_state["recent_pick"] = []
     st.session_state.prebatch_ready_to_confirm = False
     st.session_state._last_region = region_code
 
 # ── Step 1 — Source files (card) ──
 with _card("card_files"):
-    _step(1, "Source files", "Upload the three exports. Several QS files are merged automatically.")
+    _step(1, "Source files", "The Pleteo batch file sets the cases; the Conflict Check adds the investigation data. QS is optional.")
     col1, col2, col3 = st.columns(3)
     with col1:
-        qs_files = st.file_uploader(
-            "QS Delivery ID File",
-            type=["csv","xlsx","xls"],
-            accept_multiple_files=True,
-            help="Upload one or more QS Delivery ID files. Multiple files are merged into one before processing.",
-        )
+        pl_file = st.file_uploader("Pleteo Batch File (required)", type=["csv","xlsx","xls"], key="up_pleteo",
+            help="Defines the batch: one row per case, grouped by Entity. Also provides tier, machine counts, "
+                 "events, country, tags and the Updated timestamp.")
     with col2:
-        pl_file = st.file_uploader("PL Batch File (Pleteo Export)", type=["csv","xlsx","xls"],
-            help="CRM export providing the 'Updated' timestamp for Last Updated At (MCC).")
+        pc_file = st.file_uploader("Conflict Check File (required)", type=["csv","xlsx","xls"], key="up_cc",
+            help="Investigation data: machine overviews, notes, entity details, machine IDs and addresses.")
     with col3:
-        pc_file = st.file_uploader("Conflict Check File", type=["csv","xlsx","xls"],
-            help="Investigation data: machine overviews, notes, entity details, and case attribution.")
-    if qs_files and len(qs_files) > 1:
-        st.info(f"📎 **{len(qs_files)} QS files uploaded** — they will be merged into one before processing.")
+        qs_files = st.file_uploader("QS Delivery ID File (optional)", type=["csv","xlsx","xls"],
+            accept_multiple_files=True, key="up_qs",
+            help="Optional. Only used for an information cross-check against the Pleteo file; it never changes the batch.")
     _files_val = st.container()          # file-validation chips are drawn here (see the processing area)
 
 # ──────────────────────────────────────────────
@@ -1008,193 +1017,259 @@ def six_months_ago() -> date:
     return date(year, month, min(today.day, max_day))
 
 
+def country_name(code):
+    """ISO-3 code from Pleteo -> country name; names and unknown codes pass through unchanged."""
+    c = str(code).strip()
+    return ISO3_COUNTRY.get(c.upper(), c)
+
+
+def pleteo_groups(pl_df):
+    """Cases of the Pleteo batch file grouped by Entity, in file order.
+    Returns (groups, duplicates): groups = [(entity, [case ids])]; duplicates = repeated IDs that were skipped.
+    A cell holding several comma-separated IDs is split; IDs already seen are skipped."""
+    order, members, seen, dups = [], {}, set(), []
+    for _, r in pl_df.iterrows():
+        ent = " ".join(str(r.get("Entity", "")).split())
+        for cid in [s.strip() for s in str(r.get("External Case ID", "")).split(",") if s.strip()]:
+            if cid.lower() == "nan":
+                continue
+            if cid in seen:
+                dups.append(cid)
+                continue
+            seen.add(cid)
+            key = ent.lower() if ent else f"__solo__{cid}"
+            if key not in members:
+                members[key] = (ent, [])
+                order.append(key)
+            members[key][1].append(cid)
+    return [members[k] for k in order], dups
+
+
+def _int(v):
+    try:
+        s = str(v).strip()
+        return None if s == "" or s.lower() == "nan" else int(float(s))
+    except (TypeError, ValueError):
+        return None
+
+
+def _day(v):
+    """Any supported date text -> 'YYYY-MM-DD' (or '' when unreadable)."""
+    s = normalize_date(str(v)) if str(v).strip() else ""
+    return s[:10] if re.match(r"\d{4}-\d{2}-\d{2}", s) else ""
+
+
+def _time_span(first_day, last_day):
+    """Same text format as the Conflict Check: whole months between the events, as 'X years Y months'."""
+    a, b = pd.to_datetime(first_day, errors="coerce"), pd.to_datetime(last_day, errors="coerce")
+    if pd.isna(a) or pd.isna(b):
+        return ""
+    m = (b.year - a.year) * 12 + (b.month - a.month) - (1 if b.day < a.day else 0)
+    return f"{m // 12} years {m % 12} months"
+
+
+def _category_band(total):
+    """Case Category from all-time machines. Cut-offs confirmed in the Conflict Check data:
+    1-10 -> 3, 11-72 -> 2, 114 -> 1. Between 73 and 113 the cut-off is unknown: ''."""
+    if total is None:
+        return ""
+    return "3" if total <= 10 else ("2" if total <= 72 else ("1" if total >= 114 else ""))
+
+
+def _actionable_band(n):
+    """Actionable Category from actionable machines (confirmed: 1-10 -> 3, 11-39 -> 2; higher unseen: '')."""
+    if n is None:
+        return ""
+    return "3" if n <= 10 else ("2" if n <= 39 else "")
+
+
+def _best(values):
+    """Lowest (= best) numeric tier/category among the values, else the first non-blank one."""
+    nums = [int(v) for v in values if str(v).strip().isdigit()]
+    if nums:
+        return str(min(nums))
+    return next((str(v).strip() for v in values if str(v).strip()), "")
+
+
+def _union_text(values):
+    """Comma-separated texts -> distinct items in first-seen order, joined with ', '."""
+    out = []
+    for v in values:
+        for part in str(v).split(","):
+            part = part.strip()
+            if part and part.lower() != "nan" and part not in out:
+                out.append(part)
+    return ", ".join(out)
+
+
 def validate_against_history(case_ids: list, region: str):
     """
-    Check Case IDs against delivery history.
+    Check Case IDs against the delivery history, case by case (sub-ID level), so it works whatever
+    way cases were grouped when they were delivered.
 
     Rules:
-    - Delivered within the last 6 months → EXCLUDED from generation (returned in excluded_ids).
-    - Delivered more than 6 months ago   → WARNING only (can still be generated).
-    - Sub-ID order is normalised before comparison.
+    - A row with ANY case delivered within the last 6 months -> RECENT. It stays in the batch unless
+      the user chooses to exclude it (some deliveries are intentionally repeated).
+    - Otherwise, a row with a case delivered more than 6 months ago -> WARNING only (relaunch).
 
     Returns:
-        excluded_ids  — set of normalised Case IDs to auto-remove at generation
-        excluded_msgs — human-readable lines for the excluded group
-        warning_msgs  — human-readable lines for the eligible-but-repeated group
-        is_clean      — True when both excluded and warnings are empty
+        recent_ids   — set of normalised Case IDs (rows) delivered within 6 months
+        recent_msgs  — human-readable lines for those rows
+        warning_msgs — human-readable lines for the older (relaunch) rows
+        is_clean     — True when both lists are empty
+        details      — normalised Case ID -> {case, sub, batch, date, months} for each recent row
     """
     cutoff = six_months_ago()
+    delivered: dict = {}          # sub-ID -> (batch number, delivery date) of its most recent delivery
+    for batch in st.session_state.delivery_history.get(region, []):
+        b_num, b_date = batch.get("batch_number", "?"), str(batch.get("delivery_date", "?"))
+        for case in batch.get("cases", []):
+            raw_cid = case[0] if isinstance(case, (list, tuple)) else case.get("case_id", "")
+            for sub in normalize_case_id(str(raw_cid)).split(","):
+                if sub and (sub not in delivered or b_date > delivered[sub][1]):
+                    delivered[sub] = (b_num, b_date)
 
-    # Build lookup: normalised_case_id → (batch_num, delivery_date, batch_type)
-    delivered: dict = {}
-    for hist_key in [region]:
-        for batch in st.session_state.delivery_history.get(hist_key, []):
-            b_num  = batch.get("batch_number", "?")
-            b_date = batch.get("delivery_date", "?")
-            batch_type = "Standard"
-            for case in batch.get("cases", []):
-                raw_cid = case[0] if isinstance(case, (list, tuple)) else case.get("case_id", "")
-                norm    = normalize_case_id(raw_cid)
-                # Keep the most recent delivery if a case appears in multiple batches
-                if norm not in delivered:
-                    delivered[norm] = (b_num, b_date, batch_type)
-                else:
-                    existing_date = delivered[norm][1]
-                    if b_date > existing_date:
-                        delivered[norm] = (b_num, b_date, batch_type)
-
-    excluded_ids:  set  = set()
-    excluded_msgs: list = []
-    warning_msgs:  list = []
-
+    excluded_ids, excluded_msgs, warning_msgs, details = set(), [], [], {}
     for cid in case_ids:
         norm = normalize_case_id(cid)
-        if norm not in delivered:
+        hits = [(s,) + delivered[s] for s in norm.split(",") if s in delivered]
+        if not hits:
             continue
-        b_num, b_date, b_type = delivered[norm]
-
-        # Parse delivery date for 6-month comparison
+        sub, b_num, b_date = max(hits, key=lambda h: h[2])
+        which = "" if norm == sub else f" (case {sub})"
         try:
             delivered_on = datetime.strptime(b_date, "%Y-%m-%d").date()
         except ValueError:
             delivered_on = None
-
         if delivered_on and delivered_on >= cutoff:
-            # Within 6 months → exclude from generation
             excluded_ids.add(norm)
-            months_since = (date.today().year - delivered_on.year) * 12 + \
-                           (date.today().month - delivered_on.month)
+            months_since = (date.today().year - delivered_on.year) * 12 + (date.today().month - delivered_on.month)
+            details[norm] = {"case": cid, "sub": sub, "batch": b_num, "date": b_date, "months": months_since}
             excluded_msgs.append(
-                f"🚫 **{cid}** — delivered {months_since}mo ago in {b_type} Batch "
-                f"**#{b_num}** on {b_date}. **Automatically excluded** (within 6-month window)."
+                f"🔁 **{cid}**{which} — delivered {months_since}mo ago in Batch **#{b_num}** on {b_date} "
+                f"(within 6 months)."
             )
         else:
-            # Older than 6 months → warn but allow
             warning_msgs.append(
-                f"⚠️ **{cid}** — previously delivered in {b_type} Batch "
-                f"**#{b_num}** on {b_date}. Eligible for relaunch (older than 6 months)."
+                f"⚠️ **{cid}**{which} — previously delivered in Batch **#{b_num}** on {b_date}. "
+                f"Eligible for relaunch (older than 6 months)."
             )
-
-    is_clean = not excluded_ids and not warning_msgs
-    return excluded_ids, excluded_msgs, warning_msgs, is_clean
+    return excluded_ids, excluded_msgs, warning_msgs, (not excluded_ids and not warning_msgs), details
 
 
 # ──────────────────────────────────────────────
 # Core Processing
 # ──────────────────────────────────────────────
 
-def process_data(qs_df, pl_df, cc_df, region_code):
-    qs_df, pl_df, cc_df = clean_df(qs_df), clean_df(pl_df), clean_df(cc_df)
+def process_data(pl_df, cc_df, region_code, excluded=None):
+    """
+    Build the Prebatch from the Pleteo batch file (the cases, grouped by Entity) and the Conflict Check
+    (investigation data). The QS file is not needed.
+
+    Rules confirmed against QS data where QS was clean:
+    - machine counts of an entity = sum over its distinct cases (Pleteo per case, Conflict Check as fallback)
+    - machine IDs = union of the cases' lists; tier = best (lowest) tier; First Event = earliest;
+      Last Event = latest; text fields come from the Conflict Check (combined for multi-case entities)
+    - cases missing from the Conflict Check keep the Pleteo data (entity, counts, tier, events, country)
+
+    Returns (result_df, unmatched, grouped, duplicates, excluded_count, []).
+    """
+    pl_df, cc_df = clean_df(pl_df), clean_df(cc_df)
     cc_lookup = build_lookup(cc_df, "Case ID")
-    pl_lookup = build_lookup(pl_df, "External Case ID")
-
-    # Cases to exclude due to 6-month window (set of normalised IDs)
-    excluded_norm = st.session_state.get("validation_excluded", set())
-
+    pl_lookup = {}
+    for _, r in pl_df.iterrows():
+        for cid in [s.strip() for s in str(r.get("External Case ID", "")).split(",") if s.strip()]:
+            pl_lookup.setdefault(cid, r)
+    excluded = excluded or set()
+    groups, duplicates = pleteo_groups(pl_df)
     output_rows, unmatched_cases, grouped_cases = [], [], []
-    seen_case_ids, duplicate_cases = {}, []
     excluded_count = 0
-    sub_id_deduped = []   # cases where sub-IDs were silently cleaned
 
-    for idx, (_, qs_row) in enumerate(qs_df.iterrows()):
-        case_id_raw = str(qs_row.get("Case ID","")).strip()
-        if not case_id_raw or case_id_raw.lower() == "nan":
-            continue
-
-        # Deduplicate sub-IDs before any further processing
-        case_id_raw, was_deduped = normalize_sub_ids(case_id_raw)
-        if was_deduped:
-            sub_id_deduped.append(case_id_raw)
-
-        if case_id_raw in seen_case_ids:
-            duplicate_cases.append(case_id_raw)
-            continue
-        seen_case_ids[case_id_raw] = idx
-
-        # Skip cases excluded by the 6-month window
-        if normalize_case_id(case_id_raw) in excluded_norm:
+    for entity, ids in groups:
+        case_id = ",".join(ids)
+        if normalize_case_id(case_id) in excluded:
             excluded_count += 1
             continue
+        if len(ids) > 1:
+            grouped_cases.append(case_id)
+        ccs = [cc_lookup[i] for i in ids if i in cc_lookup]
+        pls = [pl_lookup[i] for i in ids if i in pl_lookup]
+        if not ccs:
+            unmatched_cases.append(case_id)
+        single = len(ids) == 1 and len(ccs) == 1
+        cc_first = lambda col: next((safe_get(c, col) for c in ccs if safe_get(c, col)), "")
+        pl_first = lambda col: next((safe_get(p, col) for p in pls if safe_get(p, col)), "")
 
-        case_ids = [c.strip() for c in case_id_raw.split(",") if c.strip()]
-        if not case_ids: continue
-        if len(case_ids) > 1: grouped_cases.append(case_id_raw)
+        # ── per-case values (Pleteo first; it matches the Conflict Check), then combined ──
+        totals, actions, tiers, firsts, lasts, countries = [], [], [], [], [], []
+        for i in ids:
+            pr, cr = pl_lookup.get(i), cc_lookup.get(i)
+            t = _int(safe_get(pr, "# Total Machines")) if pr is not None else None
+            a = _int(safe_get(pr, "# Approved Machines")) if pr is not None else None
+            if t is None and cr is not None: t = _int(safe_get(cr, "# All Time Machines"))
+            if a is None and cr is not None: a = _int(safe_get(cr, "# Actionable Machines"))
+            totals.append(t); actions.append(a)
+            tiers.append((safe_get(pr, "Case Tier") if pr is not None else "") or (safe_get(cr, "Case Tier") if cr is not None else ""))
+            firsts.append((_day(safe_get(cr, "First Event")) if cr is not None else "") or (_day(safe_get(pr, "First Event")) if pr is not None else ""))
+            lasts.append((_day(safe_get(cr, "Last Event")) if cr is not None else "") or (_day(safe_get(pr, "Last Event")) if pr is not None else ""))
+            countries.append(safe_get(cr, "Countries") if cr is not None and safe_get(cr, "Countries")
+                             else (country_name(safe_get(pr, "Country")) if pr is not None else ""))
+        known_t = [x for x in totals if x is not None]; known_a = [x for x in actions if x is not None]
+        total = sum(known_t) if known_t else None
+        action = sum(known_a) if known_a else None
+        first_day = min([d for d in firsts if d], default=""); last_day = max([d for d in lasts if d], default="")
 
-        cc_row = next((cc_lookup[cid] for cid in case_ids if cid in cc_lookup), None)
-        if cc_row is None:
-            unmatched_cases.append(case_id_raw)
-            cc_row = pd.Series(dtype=str)
-
-        machine_overview = (combine_machine_overviews(cc_lookup, case_ids) if len(case_ids) > 1
-                            else safe_get(cc_row, "Machine Overview"))
-        investigation_notes = (combine_investigation_notes(cc_lookup, case_ids) if len(case_ids) > 1
-                               else safe_get(cc_row, "Investigation Notes"))
-        actionable_domains = safe_get(cc_row, "Actionable Domains") or safe_get(qs_row, "Actionable Domains")
-        website = safe_get(cc_row, "Website") or safe_get(qs_row, "Websites")
-        entity_name = safe_get(cc_row, "Pleteo Entity Name") or safe_get(qs_row, "Company Name")
-        first_event = normalize_date(safe_get(qs_row, "First Event"))
-        last_event  = normalize_date(safe_get(qs_row, "Last Event"))
-
-        # ── Machine count fields ──
-        # When sub-IDs were deduped the QS totals are inflated.
-        # CC is the authoritative source; use it when available and it differs from QS.
-        qs_total    = safe_get(qs_row, "Total Machines")
-        qs_action   = safe_get(qs_row, "Actionable Machines")
-        qs_diff     = safe_get(qs_row, "[CFa]-Difference")
-        qs_ids      = safe_get(qs_row, "Approved Machines")
-
-        cc_total    = safe_get(cc_row, "# All Time Machines")   if cc_row is not None else ""
-        cc_action   = safe_get(cc_row, "# Actionable Machines") if cc_row is not None else ""
-        cc_ids      = safe_get(cc_row, "Actionable Machine IDs") if cc_row is not None else ""
-
-        if cc_total and cc_total != qs_total:
-            # CC overrides QS — recalculate difference
-            out_total  = cc_total
-            out_action = cc_action if cc_action else qs_action
-            out_ids    = cc_ids    if cc_ids    else qs_ids
-            try:
-                out_diff = str(int(float(out_total)) - int(float(out_action)))
-            except Exception:
-                out_diff = qs_diff
+        if single:
+            category, act_category = safe_get(ccs[0], "Case Category"), safe_get(ccs[0], "Actionable Category")
+            time_span = safe_get(ccs[0], "Time Span") or _time_span(first_day, last_day)
+            machine_ids = safe_get(ccs[0], "Actionable Machine IDs")
+            domains = safe_get(ccs[0], "Actionable Domains")
+            emails = safe_get(ccs[0], "Generic Email Addresses")
+            country_txt = safe_get(ccs[0], "Countries") or countries[0]
         else:
-            out_total  = qs_total
-            out_action = qs_action
-            out_diff   = qs_diff
-            out_ids    = qs_ids
+            category = _category_band(total) or _best([safe_get(c, "Case Category") for c in ccs])
+            act_category = _actionable_band(action) or _best([safe_get(c, "Actionable Category") for c in ccs])
+            time_span = _time_span(first_day, last_day)
+            machine_ids = _union_text([safe_get(c, "Actionable Machine IDs") for c in ccs])
+            domains = _union_text([safe_get(c, "Actionable Domains") for c in ccs])
+            emails = _union_text([safe_get(c, "Generic Email Addresses") for c in ccs])
+            country_txt = _union_text(countries)
+        domains = domains or _union_text([safe_get(p, "Actionable Domain") for p in pls])
+        notes = list(dict.fromkeys(safe_get(c, "Investigation Notes") for c in ccs if safe_get(c, "Investigation Notes")))
 
         base = {
-            "Date Added to This Sheet": "", "Is Multi-National": safe_get(cc_row, "Is Multi National"),
-            "Machine Overview": machine_overview, "Investigation Notes": investigation_notes,
-            "Case ID": case_id_raw, "Company Name": safe_get(cc_row, "Company Name"),
-            "Entity Name": entity_name, "Cylynt Organization Name": safe_get(cc_row, "Cylynt Organization Name"),
-            "Industry": safe_get(cc_row, "Industry"), "Case Tier": safe_get(qs_row, "Case Tier"),
-            "Case Category": safe_get(qs_row, "[Cfa]-Category"),
-            "Actionable Category": safe_get(qs_row, "[Cfa]-ActionableCategory"),
-            "# All Time Machines": out_total,
-            "# Actionable Machines": out_action,
-            "# Difference": out_diff,
-            "Actionable Machine IDs": out_ids,
-            "First Event": first_event, "Last Event": last_event,
-            "Time Span": safe_get(cc_row, "Time Span"),
-            "Generic Email Address": safe_get(cc_row, "Generic Email Addresses"),
-            "Actionable Domains": actionable_domains, "Website": website,
+            "Date Added to This Sheet": "", "Is Multi-National": cc_first("Is Multi National"),
+            "Machine Overview": combine_machine_overviews(cc_lookup, ids),
+            "Investigation Notes": notes[0] if len(notes) == 1 else "\n\n---\n\n".join(notes),
+            "Case ID": case_id, "Company Name": cc_first("Company Name"),
+            "Entity Name": cc_first("Pleteo Entity Name") or entity,
+            "Cylynt Organization Name": cc_first("Cylynt Organization Name"),
+            "Industry": cc_first("Industry") or pl_first("Industry"),
+            "Case Tier": _best(tiers),
+            "Case Category": category, "Actionable Category": act_category,
+            "# All Time Machines": "" if total is None else str(total),
+            "# Actionable Machines": "" if action is None else str(action),
+            "# Difference": "" if total is None or action is None else str(total - action),
+            "Actionable Machine IDs": machine_ids,
+            "First Event": f"{first_day} 00:00:00" if first_day else "",
+            "Last Event": f"{last_day} 00:00:00" if last_day else "",
+            "Time Span": time_span,
+            "Generic Email Address": emails,
+            "Actionable Domains": domains, "Website": cc_first("Website") or pl_first("Website"),
         }
-
         if region_code == "MCC":
-            last_updated = normalize_date(get_latest_updated(pl_lookup, case_ids))
+            upd = [normalize_date(safe_get(p, "Updated")) for p in pls if safe_get(p, "Updated")]
             row_data = {**base,
-                "Address": safe_get(cc_row, "Address"), "Countries": safe_get(cc_row, "Countries"),
-                "Estimated Case Value": "", "Last Updated At": last_updated, "NNS License Count": "",
+                "Address": cc_first("Address"), "Countries": country_txt,
+                "Estimated Case Value": "", "Last Updated At": max(upd) if upd else "", "NNS License Count": "",
             }
         else:
-            row_data = {**base,
-                "Addresses": safe_get(cc_row, "Address"), "Country": safe_get(cc_row, "Countries"),
-            }
+            row_data = {**base, "Addresses": cc_first("Address"), "Country": country_txt}
         output_rows.append(row_data)
 
     target_cols = MCC_COLUMNS if region_code == "MCC" else CS_COLUMNS
     result_df = pd.DataFrame(output_rows, columns=target_cols)
-    return result_df, unmatched_cases, grouped_cases, duplicate_cases, excluded_count, sub_id_deduped
+    return result_df, unmatched_cases, grouped_cases, duplicates, excluded_count, []
 
 
 # ──────────────────────────────────────────────
@@ -2295,34 +2370,42 @@ with _card("card_dist"):
 # Step 3 — Validate & generate (card)
 # ──────────────────────────────────────────────
 with _card("card_run"):
-    _step(3, "Validate & generate", "Check the files against the delivery history, then build the Prebatch.")
-    all_uploaded = bool(qs_files and pl_file and pc_file)
+    _step(3, "Validate & generate", "Generate builds the Prebatch and checks the delivery history. Cases delivered in the last 6 months stay in unless you exclude them. Validate is an optional preview of that check.")
+    all_uploaded = bool(pl_file and pc_file)          # the QS file is optional
     qs_df_v = pl_df_v = cc_df_v = None
-    all_valid = False
+    all_valid = pl_ok = cc_ok = False
 
     if any([qs_files, pl_file, pc_file]):
         with _files_val:
             vc1, vc2, vc3 = st.columns(3)
-            with vc1:
+            with vc1: pl_df_v, pl_ok = show_validation(pl_file, PL_REQUIRED, "Pleteo batch")
+            with vc2: cc_df_v, cc_ok = show_validation(pc_file, CC_REQUIRED, "Conflict Check")
+            with vc3:
                 if qs_files:
+                    label = f"QS Delivery ID ({len(qs_files)} file{'s' if len(qs_files) > 1 else ''}, optional)"
                     try:
                         merged_qs = clean_df(merge_qs_files(qs_files))
                         ok, missing = validate_file(merged_qs, QS_REQUIRED)
-                        label = f"QS Delivery ID ({len(qs_files)} file{'s' if len(qs_files) > 1 else ''})"
                         if ok:
-                            st.markdown(f'<div class="rx-val"><span class="val-ok">✔ {label}</span><span class="rx-val-meta">{len(merged_qs):,} rows · {len(merged_qs.columns)} columns</span></div>', unsafe_allow_html=True)
-                            qs_df_v, qs_ok = merged_qs, True
+                            st.markdown(f'<div class="rx-val"><span class="val-ok">✔ {label}</span><span class="rx-val-meta">{len(merged_qs):,} rows · cross-check only</span></div>', unsafe_allow_html=True)
+                            qs_df_v = merged_qs
                         else:
-                            st.markdown(f'<div class="rx-val"><span class="val-err">✘ {label}</span><span class="rx-val-meta">missing: {", ".join(sorted(missing))}</span></div>', unsafe_allow_html=True)
-                            qs_df_v, qs_ok = None, False
+                            st.markdown(f'<div class="rx-val"><span class="val-err">✘ {label}</span><span class="rx-val-meta">missing: {", ".join(sorted(missing))} · ignored</span></div>', unsafe_allow_html=True)
                     except Exception as e:
-                        st.markdown(f'<div class="rx-val"><span class="val-err">✘ QS Delivery ID</span><span class="rx-val-meta">could not read file(s): {e}</span></div>', unsafe_allow_html=True)
-                        qs_df_v, qs_ok = None, False
-                else:
-                    qs_ok = False
-            with vc2: pl_df_v, pl_ok = show_validation(pl_file, PL_REQUIRED, "PL Batch")
-            with vc3: cc_df_v, cc_ok = show_validation(pc_file, CC_REQUIRED, "Conflict Check")
-        all_valid = all_uploaded and qs_ok and pl_ok and cc_ok
+                        st.markdown(f'<div class="rx-val"><span class="val-err">✘ {label}</span><span class="rx-val-meta">could not read file(s): {e} · ignored</span></div>', unsafe_allow_html=True)
+            if qs_df_v is not None and pl_ok and pl_df_v is not None:
+                _qs_ids = {s.strip() for v in qs_df_v["Case ID"] for s in str(v).split(",") if s.strip()}
+                _pl_ids = {s.strip() for v in pl_df_v["External Case ID"] for s in str(v).split(",") if s.strip()}
+                st.caption(f"QS cross-check (information only; the batch is built from the Pleteo file): QS lists "
+                           f"{len(_qs_ids - _pl_ids)} case(s) not in your Pleteo file, and your Pleteo file has "
+                           f"{len(_pl_ids - _qs_ids)} case(s) not in QS.")
+            if pl_ok and pl_df_v is not None and "Region" in pl_df_v.columns:
+                _regs = sorted({str(v).strip() for v in pl_df_v["Region"] if str(v).strip()})
+                _says_mcc = any("MCC" in r.upper() for r in _regs)
+                if _regs and ((region_code == "CS" and _says_mcc) or (region_code == "MCC" and not _says_mcc)):
+                    st.warning(f"⚠️ The Pleteo file's Region column says {', '.join(_regs)}, but **{region_code}** is selected. "
+                               "Check that you picked the right region.")
+        all_valid = all_uploaded and pl_ok and cc_ok
 
     # ── Action Buttons Row ──
     if all_uploaded:
@@ -2331,8 +2414,8 @@ with _card("card_run"):
 
         if not st.session_state.history_load_ok:
             st.error(
-                "🚫 Validate Batch is locked because the delivery history could not be loaded from "
-                "GitHub. Without it the 6-month rule and the repeated-case checks cannot run, and an "
+                "🚫 Validate Batch is locked, and so is Generate, because the delivery history could not be "
+                "loaded from GitHub. Without it the 6-month rule and the repeated-case checks cannot run, and an "
                 "empty result would look like an all-clear. See the warning at the top of the page, "
                 "fix the GitHub connection, then press 🔄."
             )
@@ -2344,50 +2427,62 @@ with _card("card_run"):
                      "doesn't have it. Re-export it with tags, or switch TWD off in the profile. "
                      "Generate Prebatch File stays locked.")
 
+        def _history_check():
+            """The delivery-history check on the Pleteo batch (used by Validate and by Generate).
+            Recent rows are only reported here; they are left out only if the user picks them."""
+            groups_ = pleteo_groups(pl_df_v)[0]
+            ids_ = [",".join(g) for _, g in groups_]
+            ent_ = {normalize_case_id(",".join(g)): e for e, g in groups_}
+            recent_, recent_msgs_, warn_msgs_, clean_, det_ = validate_against_history(ids_, region_code)
+            st.session_state.validation_excluded = recent_
+            st.session_state.validation_excl_msgs = recent_msgs_
+            st.session_state.validation_warnings = warn_msgs_
+            st.session_state.validation_clean = clean_
+            st.session_state.recent_records = [
+                {"Case ID": det_[n]["case"], "Entity": ent_.get(n, ""), "Delivered on": det_[n]["date"],
+                 "Batch": f"#{det_[n]['batch']}", "Months ago": det_[n]["months"], "Matched case": det_[n]["sub"], "_norm": n}
+                for n in (normalize_case_id(i) for i in ids_) if n in det_
+            ]
+            return recent_
+
         btn_col1, btn_col2 = st.columns(2)
 
-        # ── Validate Batch ──
+        # ── Validate Batch (optional preview) ──
         with btn_col1:
-            if st.button("🔍 Validate Batch", use_container_width=True,
+            if st.button("🔍 Validate Batch (optional)", use_container_width=True,
                          disabled=(not all_valid) or (not st.session_state.history_load_ok),
-                         help="Check Case IDs against previously confirmed deliveries."):
+                         help="Preview the delivery-history check. Generate runs the same check anyway."):
                 try:
-                    qs_temp = clean_df(merge_qs_files(qs_files))
-                    case_ids_to_validate = [
-                        str(v).strip() for v in qs_temp.get("Case ID", qs_temp.iloc[:, 0])
-                        if str(v).strip() and str(v).strip().lower() != "nan"
-                    ]
-                    excl_ids, excl_msgs, warn_msgs, is_clean = validate_against_history(
-                        case_ids_to_validate, region_code
-                    )
-                    st.session_state.validation_excluded = excl_ids
-                    st.session_state.validation_warnings = warn_msgs
-                    st.session_state.validation_clean    = is_clean
-                    st.session_state.batch_validated     = True
+                    _history_check()
+                    st.session_state.batch_validated = True
+                    st.session_state.history_checked = False
                     st.session_state.prebatch_ready_to_confirm = False
                     st.session_state.result_df = None
-                    # Store excluded messages separately for display
-                    st.session_state.validation_excl_msgs = excl_msgs
                 except Exception as e:
                     st.error(f"Validation error: {e}")
 
-        # ── Generate Prebatch (only after validation) ──
+        # ── Generate Prebatch (runs the history check; leaves out only the recent cases the user picked) ──
         with btn_col2:
-            generate_disabled = (not all_valid or not st.session_state.batch_validated
+            generate_disabled = (not all_valid or not st.session_state.history_load_ok
                                  or bool(dist_problem) or _tags_missing)
             generate_help = (
-                "Run Validate Batch first." if not st.session_state.batch_validated else
                 "Resolve file validation errors first." if not all_valid else
+                "The delivery history must load first (see the warning at the top)." if not st.session_state.history_load_ok else
                 "Fix the distribution profile first (see the message in the Batch Distribution section)." if dist_problem else
                 "TWD needs the Tags column in the Pleteo export." if _tags_missing else
-                "Generate the Prebatch output file."
+                "Build the Prebatch. Cases delivered in the last 6 months stay in unless you exclude them."
             )
             if st.button("▶ Generate Prebatch File", type="primary", use_container_width=True,
                          disabled=generate_disabled, help=generate_help):
                 with st.spinner("Processing files..."):
                     try:
+                        _recent_now = _history_check()
+                        st.session_state.history_checked = True
+                        # only the recent rows the user chose to exclude are left out
+                        _chosen = {v for v in st.session_state.get("recent_pick", []) if v in _recent_now}
+                        st.session_state.recent_applied = sorted(_chosen)
                         raw_df, unmatched, grouped, duplicates, excluded_ct, deduped = process_data(
-                            qs_df_v, pl_df_v, cc_df_v, region_code
+                            pl_df_v, cc_df_v, region_code, _chosen
                         )
                         st.session_state.raw_df          = raw_df
                         st.session_state.unmatched       = unmatched
@@ -2442,26 +2537,43 @@ with _card("card_run"):
                         st.error(f"Error processing files: {str(e)}")
                         st.exception(e)
 
-        # ── Validation Result Display ──
-        if st.session_state.batch_validated:
-            excl_ids  = st.session_state.get("validation_excluded", set())
-            excl_msgs = st.session_state.get("validation_excl_msgs", [])
+        # ── History check result (from Validate, or from Generate when Validate was skipped) ──
+        if st.session_state.batch_validated or st.session_state.get("history_checked"):
             warn_msgs = st.session_state.get("validation_warnings", [])
 
+            recs = st.session_state.get("recent_records", [])
             if st.session_state.validation_clean:
                 st.success(
-                    "✅ **Batch validated — No repeated Case IDs found.** "
-                    "All cases are new to the delivery history. You may now generate the Prebatch file."
+                    "✅ **History check passed — no repeated Case IDs.** "
+                    "All cases are new to the delivery history."
                 )
             else:
-                if excl_ids:
-                    st.error(
-                        f"🚫 **{len(excl_ids)} case(s) automatically excluded** — "
-                        f"delivered within the last 6 months. They will be removed from the output."
+                if recs:
+                    st.warning(
+                        f"⚠️ **{len(recs)} case(s) were delivered in the last 6 months.** "
+                        f"They stay in the batch unless you choose to exclude them below."
                     )
-                    with st.expander(f"View {len(excl_msgs)} excluded case(s)", expanded=True):
-                        for m in excl_msgs:
-                            st.markdown(f"- {m}")
+                    with st.expander(f"View the {len(recs)} case(s) delivered in the last 6 months", expanded=False):
+                        st.dataframe(pd.DataFrame([{k: v for k, v in r.items() if not k.startswith("_")} for r in recs]),
+                                     hide_index=True, use_container_width=True)
+                    _opts = [r["_norm"] for r in recs]
+                    _labels = {r["_norm"]: f'{r["Case ID"]} — {r["Entity"]} (Batch {r["Batch"]}, {r["Delivered on"]})' for r in recs}
+                    _cur = [v for v in st.session_state.get("recent_pick", []) if v in _opts]
+                    if _cur != st.session_state.get("recent_pick", []):
+                        st.session_state["recent_pick"] = _cur          # drop choices that no longer apply (new files)
+                    st.multiselect("Exclude from this batch", _opts, key="recent_pick",
+                                   format_func=lambda v: _labels.get(v, v),
+                                   placeholder="None excluded — every case stays in the batch")
+                    def _pick_all(o=tuple(_opts)): st.session_state["recent_pick"] = list(o)
+                    def _pick_none(): st.session_state["recent_pick"] = []
+                    _b1, _b2, _ = st.columns([1, 1, 3])
+                    _b1.button("Select all", key="recent_all", on_click=_pick_all, use_container_width=True)
+                    _b2.button("Clear", key="recent_none", on_click=_pick_none, use_container_width=True)
+                    if (st.session_state.get("result_df") is not None
+                            and sorted(st.session_state.get("recent_pick", [])) != sorted(st.session_state.get("recent_applied", []))):
+                        st.info("Your selection changed. Press **Generate Prebatch File** again to apply it.")
+                    else:
+                        st.caption("Cases you select here are left out when you press Generate Prebatch File.")
 
                 if warn_msgs:
                     st.warning(
@@ -2472,12 +2584,10 @@ with _card("card_run"):
                         for w in warn_msgs:
                             st.markdown(f"- {w}")
 
-                if excl_ids:
-                    st.info("Generate is available — excluded cases will be automatically removed from the output.")
 
     else:
-        missing = [n for f, n in [(qs_files,"QS Delivery ID"),(pl_file,"PL Batch"),(pc_file,"Conflict Check")] if not f]
-        st.info(f"Upload the remaining file(s) to proceed: **{', '.join(missing)}**")
+        missing = [n for f, n in [(pl_file, "Pleteo batch file"), (pc_file, "Conflict Check")] if not f]
+        st.info(f"Upload the remaining file(s) to proceed: **{', '.join(missing)}** (the QS file is optional)")
 
 
 
@@ -2598,14 +2708,14 @@ if st.session_state.result_df is not None:
             m2.metric("Total Available",          len(raw_df))
             m3.metric("Backlog",                  dist_report.get("total_backlog", 0))
             m4.metric("Duplicates Removed",       len(st.session_state.duplicates))
-            m5.metric("Excluded (6-mo) 🚫",       st.session_state.get("excluded_count", 0))
+            m5.metric("Excluded by you 🚫",       st.session_state.get("excluded_count", 0))
         else:
             m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("Total Cases",              len(result_df))
             m2.metric("Grouped Entities",         len(st.session_state.grouped))
             m3.metric("Unmatched",                len(st.session_state.unmatched))
             m4.metric("Duplicates Removed",       len(st.session_state.duplicates))
-            m5.metric("Excluded (6-mo) 🚫",       st.session_state.get("excluded_count", 0))
+            m5.metric("Excluded by you 🚫",       st.session_state.get("excluded_count", 0))
 
         # ── Diagnostics ──
         dcols = st.columns(4)
