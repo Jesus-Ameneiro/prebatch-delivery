@@ -281,6 +281,72 @@ DEFAULT_CS_DIST = {
 }
 
 HISTORY_FILE = "batch_history.json"
+
+# ── Full delivery-history export (defined here: the sidebar uses it before the processing helpers) ──
+def _sheet_title(base, used):
+    """Excel-safe sheet name: at most 31 characters, none of []:*?/\\, unique within the workbook."""
+    t = re.sub(r"[\[\]:*?/\\]", "-", str(base)).strip().strip("'")[:31] or "Sheet"
+    name, k = t, 2
+    while name.lower() in used:
+        suffix = f" ({k})"
+        name, k = t[:31 - len(suffix)] + suffix, k + 1
+    used.add(name.lower())
+    return name
+
+HISTORY_CASE_COLS = ["Region", "Batch #", "Delivery Date", "Profile", "Case ID", "Entity Name"]
+HISTORY_SUMMARY_COLS = ["Region", "Batch #", "Delivery Date", "Profile", "Cases listed", "Recorded total", "Sheet", "Note"]
+
+def history_workbook(history) -> bytes:
+    """Every confirmed batch of both regions in one Excel file:
+    - Summary: one row per batch (region, batch number, date, profile, case count, its sheet name)
+    - All Cases: every case, labelled with its region, batch number, date and profile
+    - one sheet per batch, named "<region> #<batch number>", whose rows carry the same labels
+    Batches are ordered by region (MCC, then CS) and batch number."""
+    def _num(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return v
+    batches = [(reg, b) for reg in ("MCC", "CS") for b in (history.get(reg) or [])]
+    batches.sort(key=lambda rb: (0 if rb[0] == "MCC" else 1,
+                                 (0, _num(rb[1].get("batch_number"))) if isinstance(_num(rb[1].get("batch_number")), int)
+                                 else (1, str(rb[1].get("batch_number"))),
+                                 str(rb[1].get("delivery_date", ""))))
+    used = {"summary", "all cases"}
+    summary, all_rows, per_batch = [], [], []
+    for reg, b in batches:
+        num, when, prof = _num(b.get("batch_number", "?")), str(b.get("delivery_date", "")), str(b.get("profile", ""))
+        rows = []
+        for c in b.get("cases") or []:
+            if isinstance(c, (list, tuple)):
+                cid, ent = (list(c) + ["", ""])[:2]
+            elif isinstance(c, dict):
+                cid, ent = c.get("case_id", c.get("Case ID", "")), c.get("entity_name", c.get("Entity Name", ""))
+            else:
+                cid, ent = c, ""
+            rows.append({"Region": reg, "Batch #": num, "Delivery Date": when, "Profile": prof,
+                         "Case ID": str(cid), "Entity Name": "" if ent is None else str(ent)})
+        recorded = _num(b.get("total_cases", len(rows)))
+        sheet = _sheet_title(f"{reg} #{num}", used)
+        summary.append({"Region": reg, "Batch #": num, "Delivery Date": when, "Profile": prof,
+                        "Cases listed": len(rows), "Recorded total": recorded, "Sheet": sheet,
+                        "Note": "" if recorded == len(rows) else "Recorded total differs from the cases listed"})
+        all_rows.extend(rows)
+        per_batch.append((sheet, rows))
+    frames = [("Summary", pd.DataFrame(summary, columns=HISTORY_SUMMARY_COLS)),
+              ("All Cases", pd.DataFrame(all_rows, columns=HISTORY_CASE_COLS))]
+    frames += [(name, pd.DataFrame(rows, columns=HISTORY_CASE_COLS)) for name, rows in per_batch]
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for name, df in frames:
+            df.to_excel(writer, index=False, sheet_name=name)
+            ws = writer.sheets[name]
+            for i, col in enumerate(df.columns, 1):
+                longest = max([len(str(col))] + [len(str(v)) for v in df[col].head(300)])
+                ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = min(longest + 2, 50)
+            ws.freeze_panes = "A2"
+    return buf.getvalue()
+
 BATCH_LABELS = {
     "standard":    "📊 Batch Standard",
     "low":         "🔵 Batch Low",
@@ -713,6 +779,18 @@ with st.sidebar:
 
     # ── Delivery History (persistent) ──
     st.markdown("### Delivery History")
+    if any(st.session_state.delivery_history.get(r) for r in ("MCC", "CS")):
+        try:
+            st.download_button(
+                "⬇ Download full history (.xlsx)",
+                data=history_workbook(st.session_state.delivery_history),
+                file_name=f"Delivery_History_{date.today().isoformat()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True, key="dl_history",
+                help="Every confirmed batch of MCC and CS in one file: a summary, all cases, and one sheet per batch.",
+            )
+        except Exception as _hist_err:
+            st.caption(f"The history file could not be built: {_hist_err}")
     for reg in ["MCC", "CS"]:
         batches = st.session_state.delivery_history.get(reg, [])
         if batches:
